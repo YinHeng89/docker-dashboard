@@ -1,0 +1,28 @@
+services:
+  dashboard:
+    image: yinheng1989/docker-dashboard:latest
+    container_name: docker-dashboard
+    restart: unless-stopped
+    ports:
+      - "8070:3000"
+    volumes:
+      # Docker 命名卷，自动创建，无需手动配置路径
+      - dashboard-projects:/projects
+      - dashboard-data:/data
+      - /var/run/docker.sock:/var/run/docker.sock
+      # 系统监控数据源（只读），缺失将导致 CPU/内存/磁盘监控为空
+      - /proc:/host/proc:ro
+      - /sys:/host/sys:ro
+    environment:
+      # 默认密钥，生产环境请修改（生成方法：openssl rand -hex 32）
+      - JWT_SECRET=${JWT_SECRET:-docker-dashboard-default-change-me}
+    healthcheck:
+      test: ["CMD", "node", "-e", "require('http').get('http://localhost:3000/', (r) => {process.exit(r.statusCode < 400 ? 0 : 1)})"]
+      interval: 30s
+      timeout: 10s
+      retries: 3
+      start_period: 10s
+
+volumes:
+  dashboard-projects:
+  dashboard-data:

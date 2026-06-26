@@ -1,0 +1,25 @@
+services:
+  dashboard:
+    build: .
+    container_name: docker-dashboard
+    restart: unless-stopped
+    ports:
+      - "8070:3000"
+    volumes:
+      # 同路径挂载：左边=右边，宿主机路径=容器内路径，完美支持相对路径卷
+      - ${PWD}/config/projects:${PWD}/config/projects
+      - ${PWD}/config/data:${PWD}/config/data
+      - /var/run/docker.sock:/var/run/docker.sock
+      - /proc:/host/proc:ro
+      - /sys:/host/sys:ro
+    environment:
+      - JWT_SECRET=${JWT_SECRET:-docker-dashboard-please-change-this-secret}
+      # 项目配置文件路径，默认使用当前目录下的config/projects
+      - PROJECTS_DIR=${PWD}/config/projects
+      - DB_DIR=${PWD}/config/data
+    healthcheck:
+      test: ["CMD", "node", "-e", "require('http').get('http://localhost:3000/', (r) => {process.exit(r.statusCode < 400 ? 0 : 1)})"]
+      interval: 30s
+      timeout: 10s
+      retries: 3
+      start_period: 10s

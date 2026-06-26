@@ -1,0 +1,43 @@
+# 新的配置文件，支持相对路径
+services:
+  dashboard:
+    image: yinheng1989/docker-dashboard:latest
+    container_name: docker-dashboard
+    restart: unless-stopped
+    ports:
+      - "8070:3000"
+    volumes:
+      # ../ → /mnt/nvme01/appdata/docker，左右同路径
+      - /mnt/nvme01/appdata/docker:/mnt/nvme01/appdata/docker
+      # ../../docker-dashboard_data/data → 同路径
+      - /mnt/nvme01/appdata/docker-dashboard_data/data:/mnt/nvme01/appdata/docker-dashboard_data/data
+      - /var/run/docker.sock:/var/run/docker.sock
+      - /proc:/host/proc:ro
+      - /sys:/host/sys:ro
+    environment:
+      - JWT_SECRET=H/XCZzvPYuOQVyVVBuwHWwTYGPquqKMRQAm40Cqlnzg=
+      - PROJECTS_DIR=/mnt/nvme01/appdata/docker
+      - DB_DIR=/mnt/nvme01/appdata/docker-dashboard_data/data
+    healthcheck:
+      test: ["CMD", "node", "-e", "require('http').get('http://localhost:3000/', (r) => {process.exit(r.statusCode < 400 ? 0 : 1)})"]
+      interval: 30s
+      timeout: 10s
+      retries: 3
+      start_period: 10s
+
+# 旧的配置文件，不支持相对路径
+# services:
+#   dashboard:
+#     image: yinheng1989/docker-dashboard:latest    # 直接用镜像，不用 build
+#     container_name: docker-dashboard
+#     restart: unless-stopped
+#     ports:
+#       - "8070:3000"
+#     volumes:
+#       - ../:/projects
+#       - ../../docker-dashboard_data/data:/data
+#       - /var/run/docker.sock:/var/run/docker.sock
+#       - /proc:/host/proc:ro
+#       - /sys:/host/sys:ro
+#     environment:
+#       - JWT_SECRET=H/XCZzvPYuOQVyVVBuwHWwTYGPquqKMRQAm40Cqlnzg=

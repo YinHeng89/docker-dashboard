@@ -1,0 +1,746 @@
+<!DOCTYPE html>
+<html lang="zh-CN" data-theme="dark">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <meta name="description" content="Docker Dashboard - 轻量级、功能完整的 Docker 可视化管理面板">
+    <meta name="keywords" content="Docker,Dashboard,容器管理,Compose,监控,DevOps">
+    <title>Docker Dashboard</title>
+    <link rel="icon" type="image/svg+xml" href="data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 32 32'%3E%3Crect width='32' height='32' rx='8' fill='%232496ED'/%3E%3Ctext x='16' y='22' text-anchor='middle' fill='white' font-size='18' font-weight='bold'%3ED%3C/text%3E%3C/svg%3E">
+    <link rel="stylesheet" href="css/style.css">
+</head>
+<body>
+    <!-- ========== NAVIGATION ========== -->
+    <nav class="nav" id="nav">
+        <div class="nav-inner">
+            <a href="#" class="nav-logo">
+                <svg class="logo-icon" width="26" height="26" viewBox="0 0 32 32" fill="none"><rect width="32" height="32" rx="7" fill="#2496ED"/><path d="M24 10h-2l-1 4h-3l1-4h-2l-1 4h-3l1-4h-2l-1 4H9l-1 3h2l-.5 2H7l-1 3h2l-.5 2h13l.5-2h3l.5-2h-3l.5-2h3l.5-2h-3l.5-2h-3l.5-2zm-7.5 7l.5-2h3l-.5 2h-3z" fill="white"/></svg>
+                <span data-i18n="nav.logo">Docker Dashboard</span>
+            </a>
+            <div class="nav-links">
+                <a href="#features" data-i18n="nav.features">功能特性</a>
+                <a href="#quickstart" data-i18n="nav.quickstart">快速开始</a>
+                <a href="#architecture" data-i18n="nav.architecture">架构</a>
+                <a href="https://github.com/yinheng1989/docker-dashboard" target="_blank" rel="noopener" class="nav-icon" title="GitHub">
+                    <svg width="20" height="20" viewBox="0 0 24 24" fill="currentColor"><path d="M12 0C5.37 0 0 5.37 0 12c0 5.31 3.435 9.795 8.205 11.385.6.105.825-.255.825-.57 0-.285-.015-1.23-.015-2.235-3.015.555-3.795-.735-4.035-1.41-.135-.345-.72-1.41-1.23-1.695-.42-.225-1.02-.78-.015-.795.945-.015 1.62.87 1.845 1.23 1.08 1.815 2.805 1.305 3.495.99.105-.78.42-1.305.765-1.605-2.67-.3-5.46-1.335-5.46-5.925 0-1.305.465-2.385 1.23-3.225-.12-.3-.54-1.53.12-3.18 0 0 1.005-.315 3.3 1.23.96-.27 1.98-.405 3-.405s2.04.135 3 .405c2.295-1.56 3.3-1.23 3.3-1.23.66 1.65.24 2.88.12 3.18.765.84 1.23 1.905 1.23 3.225 0 4.605-2.805 5.625-5.475 5.925.435.375.81 1.095.81 2.22 0 1.605-.015 2.895-.015 3.3 0 .315.225.69.825.57A12.02 12.02 0 0 0 24 12c0-6.63-5.37-12-12-12z"/></svg>
+                </a>
+                <button class="theme-toggle" id="themeToggle" aria-label="Toggle theme">
+                    <svg class="icon-sun" width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><circle cx="12" cy="12" r="5"/><line x1="12" y1="1" x2="12" y2="3"/><line x1="12" y1="21" x2="12" y2="23"/><line x1="4.22" y1="4.22" x2="5.64" y2="5.64"/><line x1="18.36" y1="18.36" x2="19.78" y2="19.78"/><line x1="1" y1="12" x2="3" y2="12"/><line x1="21" y1="12" x2="23" y2="12"/><line x1="4.22" y1="19.78" x2="5.64" y2="18.36"/><line x1="18.36" y1="5.64" x2="19.78" y2="4.22"/></svg>
+                    <svg class="icon-moon" width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M21 12.79A9 9 0 1 1 11.21 3 7 7 0 0 0 21 12.79z"/></svg>
+                </button>
+                <button class="lang-toggle" id="langToggle" aria-label="Switch language">
+                    <span class="lang-label">EN</span>
+                </button>
+            </div>
+            <button class="mobile-menu-btn" id="mobileMenuBtn" aria-label="Menu">
+                <svg width="24" height="24" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><line x1="3" y1="6" x2="21" y2="6"/><line x1="3" y1="12" x2="21" y2="12"/><line x1="3" y1="18" x2="21" y2="18"/></svg>
+            </button>
+        </div>
+        <div class="mobile-menu" id="mobileMenu">
+            <a href="#features" data-i18n="nav.features">功能特性</a>
+            <a href="#quickstart" data-i18n="nav.quickstart">快速开始</a>
+            <a href="#architecture" data-i18n="nav.architecture">架构</a>
+        </div>
+    </nav>
+
+    <!-- ========== HERO ========== -->
+    <section class="hero" id="hero">
+        <div class="hero-bg">
+            <div class="hero-grid"></div>
+            <div class="hero-orb hero-orb-1"></div>
+            <div class="hero-orb hero-orb-2"></div>
+            <div class="hero-orb hero-orb-3"></div>
+        </div>
+        <div class="hero-content">
+            <div class="hero-badge" data-i18n="hero.badge">开源免费 · 轻量级 · 功能完整</div>
+            <h1 class="hero-title">
+                <span data-i18n="hero.title_line1">Docker 可视化管理</span><br>
+                <span class="gradient-text" data-i18n="hero.title_line2">从未如此简单</span>
+            </h1>
+            <p class="hero-desc" data-i18n="hero.desc">轻量级、功能完整的 Docker 可视化管理面板。支持容器、Compose、镜像、网络、存储卷一站式管理，内置实时监控告警、Web 终端、多工作区分组。</p>
+            <div class="hero-actions">
+                <a href="#quickstart" class="btn btn-primary" data-i18n="hero.cta_primary">
+                    <svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.5" stroke-linecap="round" stroke-linejoin="round"><polyline points="5 12 3 12 12 3 21 12 19 12"/><path d="M5 12v7a2 2 0 0 0 2 2h10a2 2 0 0 0 2-2v-7"/><path d="M9 21v-6a2 2 0 0 1 2-2h2a2 2 0 0 1 2 2v6"/></svg>
+                    快速部署
+                </a>
+                <a href="https://github.com/yinheng1989/docker-dashboard" target="_blank" rel="noopener" class="btn btn-outline" data-i18n="hero.cta_secondary">
+                    <svg width="18" height="18" viewBox="0 0 24 24" fill="currentColor"><path d="M12 0C5.37 0 0 5.37 0 12c0 5.31 3.435 9.795 8.205 11.385.6.105.825-.255.825-.57 0-.285-.015-1.23-.015-2.235-3.015.555-3.795-.735-4.035-1.41-.135-.345-.72-1.41-1.23-1.695-.42-.225-1.02-.78-.015-.795.945-.015 1.62.87 1.845 1.23 1.08 1.815 2.805 1.305 3.495.99.105-.78.42-1.305.765-1.605-2.67-.3-5.46-1.335-5.46-5.925 0-1.305.465-2.385 1.23-3.225-.12-.3-.54-1.53.12-3.18 0 0 1.005-.315 3.3 1.23.96-.27 1.98-.405 3-.405s2.04.135 3 .405c2.295-1.56 3.3-1.23 3.3-1.23.66 1.65.24 2.88.12 3.18.765.84 1.23 1.905 1.23 3.225 0 4.605-2.805 5.625-5.475 5.925.435.375.81 1.095.81 2.22 0 1.605-.015 2.895-.015 3.3 0 .315.225.69.825.57A12.02 12.02 0 0 0 24 12c0-6.63-5.37-12-12-12z"/></svg>
+                    GitHub
+                </a>
+            </div>
+            <div class="hero-stats">
+                <div class="stat-item">
+                    <span class="stat-value">10+</span>
+                    <span class="stat-label" data-i18n="hero.stat_pages">功能页面</span>
+                </div>
+                <div class="stat-item">
+                    <span class="stat-value">22+</span>
+                    <span class="stat-label" data-i18n="hero.stat_components">交互组件</span>
+                </div>
+                <div class="stat-item">
+                    <span class="stat-value">7</span>
+                    <span class="stat-label" data-i18n="hero.stat_compose">Compose 操作</span>
+                </div>
+                <div class="stat-item">
+                    <span class="stat-value">6</span>
+                    <span class="stat-label" data-i18n="hero.stat_templates">内置模板</span>
+                </div>
+                <div class="stat-item">
+                    <span class="stat-value">4</span>
+                    <span class="stat-label" data-i18n="hero.stat_alerts">种告警规则</span>
+                </div>
+                <div class="stat-item">
+                    <span class="stat-value">2</span>
+                    <span class="stat-label" data-i18n="hero.stat_arch">CPU 架构</span>
+                </div>
+            </div>
+        </div>
+    </section>
+
+    <!-- ========== FEATURES ========== -->
+    <section class="features" id="features">
+        <div class="section-header">
+            <h2 class="section-title" data-i18n="features.title">核心功能</h2>
+            <p class="section-desc" data-i18n="features.desc">覆盖 Docker 日常运维的方方面面，提供一站式可视化管理体验</p>
+        </div>
+        <div class="features-grid">
+            <!-- Feature 1: Container Management -->
+            <div class="feature-card" data-animate>
+                <div class="feature-icon">
+                    <svg width="32" height="32" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.5" stroke-linecap="round" stroke-linejoin="round"><rect x="2" y="3" width="20" height="14" rx="2" ry="2"/><line x1="8" y1="21" x2="16" y2="21"/><line x1="12" y1="17" x2="12" y2="21"/></svg>
+                </div>
+                <h3 data-i18n="features.f1_title">容器管理</h3>
+                <p data-i18n="features.f1_desc">启动、停止、重启、暂停、删除容器，支持卡片和表格双视图模式，批量操作一应俱全</p>
+            </div>
+            <!-- Feature 2: Compose -->
+            <div class="feature-card" data-animate>
+                <div class="feature-icon">
+                    <svg width="32" height="32" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.5" stroke-linecap="round" stroke-linejoin="round"><path d="M14.7 6.3a1 1 0 0 0 0 1.4l1.6 1.6a1 1 0 0 0 1.4 0l3.77-3.77a6 6 0 0 1-7.94 7.94l-6.91 6.91a2.12 2.12 0 0 1-3-3l6.91-6.91a6 6 0 0 1 7.94-7.94l-3.76 3.76z"/></svg>
+                </div>
+                <h3 data-i18n="features.f2_title">Compose 编排</h3>
+                <p data-i18n="features.f2_desc">创建、编辑、部署 Compose 项目，支持多文件项目、环境变量、模板系统，完美处理相对路径卷挂载</p>
+            </div>
+            <!-- Feature 3: Real-time Monitor -->
+            <div class="feature-card" data-animate>
+                <div class="feature-icon">
+                    <svg width="32" height="32" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.5" stroke-linecap="round" stroke-linejoin="round"><line x1="18" y1="20" x2="18" y2="10"/><line x1="12" y1="20" x2="12" y2="4"/><line x1="6" y1="20" x2="6" y2="14"/><line x1="2" y1="20" x2="22" y2="20"/></svg>
+                </div>
+                <h3 data-i18n="features.f3_title">实时监控告警</h3>
+                <p data-i18n="features.f3_desc">CPU、内存、磁盘、网络实时图表展示，可配置多级告警阈值，容器排名一目了然</p>
+            </div>
+            <!-- Feature 4: Web Terminal -->
+            <div class="feature-card" data-animate>
+                <div class="feature-icon">
+                    <svg width="32" height="32" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.5" stroke-linecap="round" stroke-linejoin="round"><polyline points="4 17 10 11 4 5"/><line x1="12" y1="19" x2="20" y2="19"/></svg>
+                </div>
+                <h3 data-i18n="features.f4_title">Web 终端</h3>
+                <p data-i18n="features.f4_desc">WebSocket 驱动的交互式容器终端，支持多标签切换，无需 SSH 即可直接操作容器内部</p>
+            </div>
+            <!-- Feature 5: Log Streaming -->
+            <div class="feature-card" data-animate>
+                <div class="feature-icon">
+                    <svg width="32" height="32" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.5" stroke-linecap="round" stroke-linejoin="round"><path d="M14 2H6a2 2 0 0 0-2 2v16a2 2 0 0 0 2 2h12a2 2 0 0 0 2-2V8z"/><polyline points="14 2 14 8 20 8"/><line x1="16" y1="13" x2="8" y2="13"/><line x1="16" y1="17" x2="8" y2="17"/><polyline points="10 9 9 9 8 9"/></svg>
+                </div>
+                <h3 data-i18n="features.f5_title">日志与文件管理</h3>
+                <p data-i18n="features.f5_desc">实时流式日志查看，支持暂停/继续、搜索过滤。项目文件在线浏览、编辑，管理更高效</p>
+            </div>
+            <!-- Feature 6: Container Update -->
+            <div class="feature-card" data-animate>
+                <div class="feature-icon">
+                    <svg width="32" height="32" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.5" stroke-linecap="round" stroke-linejoin="round"><polyline points="23 4 23 10 17 10"/><path d="M20.49 15a9 9 0 1 1-2.12-9.36L23 10"/></svg>
+                </div>
+                <h3 data-i18n="features.f6_title">容器更新</h3>
+                <p data-i18n="features.f6_desc">自动检测镜像更新，支持 Docker Hub、GHCR 等多注册表，批量流式更新，安心升级</p>
+            </div>
+            <!-- Feature 7: i18n + Theme -->
+            <div class="feature-card" data-animate>
+                <div class="feature-icon">
+                    <svg width="32" height="32" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.5" stroke-linecap="round" stroke-linejoin="round"><circle cx="12" cy="12" r="10"/><line x1="2" y1="12" x2="22" y2="12"/><path d="M12 2a15.3 15.3 0 0 1 4 10 15.3 15.3 0 0 1-4 10 15.3 15.3 0 0 1-4-10 15.3 15.3 0 0 1 4-10z"/></svg>
+                </div>
+                <h3 data-i18n="features.f7_title">国际化与主题</h3>
+                <p data-i18n="features.f7_desc">完整中英文双语支持，一键切换深色/浅色主题，无论何时何地都有最佳体验</p>
+            </div>
+            <!-- Feature 8: Security -->
+            <div class="feature-card" data-animate>
+                <div class="feature-icon">
+                    <svg width="32" height="32" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.5" stroke-linecap="round" stroke-linejoin="round"><path d="M12 22s8-4 8-10V5l-8-3-8 3v7c0 6 8 10 8 10z"/><path d="M9 12l2 2 4-4"/></svg>
+                </div>
+                <h3 data-i18n="features.f8_title">安全可靠</h3>
+                <p data-i18n="features.f8_desc">JWT 认证 + httpOnly Cookie 存储，滑动过期自动续期，自我保护防止误操作导致面板中断</p>
+            </div>
+        </div>
+    </section>
+
+    <!-- ========== HIGHLIGHT ========== -->
+    <section class="highlight" id="highlight">
+        <div class="highlight-content">
+            <div class="highlight-text">
+                <h2 data-i18n="highlight.title">为什么选择 Docker Dashboard？</h2>
+                <ul class="highlight-list">
+                    <li data-i18n="highlight.l1">
+                        <svg width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="#34D399" stroke-width="2.5" stroke-linecap="round" stroke-linejoin="round"><polyline points="20 6 9 17 4 12"/></svg>
+                        <span>轻量级单体架构，一条命令即可部署，零额外依赖</span>
+                    </li>
+                    <li data-i18n="highlight.l2">
+                        <svg width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="#34D399" stroke-width="2.5" stroke-linecap="round" stroke-linejoin="round"><polyline points="20 6 9 17 4 12"/></svg>
+                        <span>支持 amd64 和 arm64 双架构，树莓派也能完美运行</span>
+                    </li>
+                    <li data-i18n="highlight.l3">
+                        <svg width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="#34D399" stroke-width="2.5" stroke-linecap="round" stroke-linejoin="round"><polyline points="20 6 9 17 4 12"/></svg>
+                        <span>自主可控，数据存储于本地 SQLite，不上传任何信息</span>
+                    </li>
+                    <li data-i18n="highlight.l4">
+                        <svg width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="#34D399" stroke-width="2.5" stroke-linecap="round" stroke-linejoin="round"><polyline points="20 6 9 17 4 12"/></svg>
+                        <span>完整的 Compose 项目生命周期管理，超越 Portainer 的便捷体验</span>
+                    </li>
+                    <li data-i18n="highlight.l5">
+                        <svg width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="#34D399" stroke-width="2.5" stroke-linecap="round" stroke-linejoin="round"><polyline points="20 6 9 17 4 12"/></svg>
+                        <span>内置 Web 终端和日志流，无需额外工具即可完成运维操作</span>
+                    </li>
+                </ul>
+            </div>
+            <div class="highlight-visual" data-animate>
+                <div class="terminal-mockup">
+                    <div class="terminal-bar">
+                        <span class="term-dot term-dot-red"></span>
+                        <span class="term-dot term-dot-yellow"></span>
+                        <span class="term-dot term-dot-green"></span>
+                        <span class="term-title">docker-dashboard 部署终端</span>
+                    </div>
+                    <div class="terminal-body">
+                        <div class="term-line"><span class="term-prompt">$</span> mkdir -p ~/docker-dashboard && cd ~/docker-dashboard</div>
+                        <div class="term-line"><span class="term-prompt">$</span> nano docker-compose.yml</div>
+                        <div class="term-line term-line-comment"># 粘贴官网提供的配置模板，修改3个关键路径</div>
+                        <div class="term-line"><span class="term-prompt">$</span> cat docker-compose.yml</div>
+                        <div class="term-line indent"><span class="term-flag">image</span>: yinheng1989/docker-dashboard:latest</div>
+                        <div class="term-line indent"><span class="term-flag">network_mode</span>: host</div>
+                        <div class="term-line indent"><span class="term-flag">volumes</span>:  <span class="term-comment-dim"># 同路径挂载</span></div>
+                        <div class="term-line indent">- /mnt/data/projects:/mnt/data/projects</div>
+                        <div class="term-line indent"><span class="term-flag">environment</span>:</div>
+                        <div class="term-line indent">- PROJECTS_DIR=/mnt/data/projects</div>
+                        <div class="term-line"><span class="term-prompt">$</span> docker compose pull</div>
+                        <div class="term-line term-line-info">→ Pulling yinheng1989/docker-dashboard:latest...</div>
+                        <div class="term-line"><span class="term-prompt">$</span> docker compose up -d</div>
+                        <div class="term-line term-line-success">✔ Container docker-dashboard started</div>
+                        <div class="term-line term-line-info">→ Dashboard available at http://localhost:3000</div>
+                        <div class="term-line"><span class="term-cursor">_</span></div>
+                    </div>
+                </div>
+            </div>
+        </div>
+    </section>
+
+    <!-- ========== QUICK START ========== -->
+    <section class="quickstart" id="quickstart">
+        <div class="section-header">
+            <h2 class="section-title" data-i18n="quickstart.title">快速开始</h2>
+            <p class="section-desc" data-i18n="quickstart.desc">选择适合你的部署方式</p>
+        </div>
+
+        <!-- Tab Switcher -->
+        <div class="qs-tabs" role="tablist">
+            <button class="qs-tab active" role="tab" data-tab="oneclick" aria-selected="true">
+                <svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><polyline points="13 2 3 14 12 14 11 22 21 10 12 10 13 2"/></svg>
+                <span data-i18n="quickstart.tab_oneclick">一键部署</span>
+            </button>
+            <button class="qs-tab" role="tab" data-tab="manual" aria-selected="false">
+                <svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M14 2H6a2 2 0 0 0-2 2v16a2 2 0 0 0 2 2h12a2 2 0 0 0 2-2V8z"/><polyline points="14 2 14 8 20 8"/><line x1="16" y1="13" x2="8" y2="13"/><line x1="16" y1="17" x2="8" y2="17"/></svg>
+                <span data-i18n="quickstart.tab_manual">手动部署教程</span>
+            </button>
+        </div>
+
+        <!-- ====== TAB: Manual Deployment ====== -->
+        <div class="qs-tab-content" id="tab-manual" role="tabpanel">
+            <!-- Step 1: Create Config -->
+            <div class="qs-steps">
+                <div class="qs-step" data-animate>
+                    <div class="qs-step-num">01</div>
+                    <div class="qs-step-content">
+                        <h3 data-i18n="quickstart.s1_title">创建配置文件</h3>
+                        <p data-i18n="quickstart.s1_desc">创建项目目录和 docker-compose.yml，填入下方模板</p>
+                        <div class="code-block">
+                            <span class="code-text">mkdir -p ~/docker-dashboard && cd ~/docker-dashboard</span>
+                            <button class="copy-btn" data-copy="mkdir -p ~/docker-dashboard && cd ~/docker-dashboard" title="Copy">
+                                <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><rect x="9" y="9" width="13" height="13" rx="2" ry="2"/><path d="M5 15H4a2 2 0 0 1-2-2V4a2 2 0 0 1 2-2h9a2 2 0 0 1 2 2v1"/></svg>
+                            </button>
+                        </div>
+                        <div class="code-block">
+                            <span class="code-text">nano docker-compose.yml</span>
+                            <span class="code-hint" data-i18n="quickstart.s1_code_title">（粘贴下方模板）</span>
+                        </div>
+                    </div>
+                </div>
+
+                <div class="qs-connector" aria-hidden="true">
+                    <svg width="24" height="24" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><line x1="12" y1="5" x2="12" y2="19"/><polyline points="19 12 12 19 5 12"/></svg>
+                </div>
+
+                <!-- Step 2: Customize -->
+                <div class="qs-step" data-animate>
+                    <div class="qs-step-num">02</div>
+                    <div class="qs-step-content">
+                        <h3 data-i18n="quickstart.s2_title">按需修改配置</h3>
+                        <p data-i18n="quickstart.s2_desc">打开 <code>docker-compose.yml</code>，修改以下 <code>3 个关键配置</code></p>
+                        <ul class="qs-checklist">
+                            <li>
+                                <div class="qs-check-header">
+                                    <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="#F59E0B" stroke-width="2.5" stroke-linecap="round" stroke-linejoin="round"><circle cx="12" cy="12" r="10"/><line x1="12" y1="8" x2="12" y2="12"/><line x1="12" y1="16" x2="12.01" y2="16"/></svg>
+                                    <span data-i18n="quickstart.s2_item1">将 <code>/your/projects/path</code> 替换为你存放 Compose 项目的宿主机路径</span>
+                                </div>
+                                <div class="qs-check-code">
+                                    <div class="code-diff">
+                                        <div class="diff-context"><span class="code-keyword">volumes</span>:</div>
+                                        <div class="diff-remove"><span class="diff-mark">−</span>  - <span class="code-placeholder">/your/projects/path</span>:<span class="code-placeholder">/your/projects/path</span></div>
+                                        <div class="diff-add"><span class="diff-mark">+</span>  - <span class="code-keyword">/mnt/data/projects</span>:<span class="code-keyword">/mnt/data/projects</span></div>
+                                        <div class="diff-context"></div>
+                                        <div class="diff-context"><span class="code-keyword">environment</span>:</div>
+                                        <div class="diff-remove"><span class="diff-mark">−</span>  - PROJECTS_DIR=<span class="code-placeholder">/your/projects/path</span></div>
+                                        <div class="diff-add"><span class="diff-mark">+</span>  - PROJECTS_DIR=<span class="code-keyword">/mnt/data/projects</span></div>
+                                    </div>
+                                </div>
+                            </li>
+                            <li>
+                                <div class="qs-check-header">
+                                    <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="#F59E0B" stroke-width="2.5" stroke-linecap="round" stroke-linejoin="round"><circle cx="12" cy="12" r="10"/><line x1="12" y1="8" x2="12" y2="12"/><line x1="12" y1="16" x2="12.01" y2="16"/></svg>
+                                    <span data-i18n="quickstart.s2_item2">将 <code>JWT_SECRET</code> 替换为一个随机字符串（生产环境务必修改）</span>
+                                </div>
+                                <div class="qs-check-code">
+                                    <div class="code-diff">
+                                        <div class="diff-context"><span class="code-keyword">environment</span>:</div>
+                                        <div class="diff-remove"><span class="diff-mark">−</span>  - JWT_SECRET=<span class="code-placeholder">change-me-to-a-random-string</span></div>
+                                        <div class="diff-add"><span class="diff-mark">+</span>  - JWT_SECRET=<span class="code-keyword">$(openssl rand -base64 32)</span></div>
+                                    </div>
+                                </div>
+                            </li>
+                            <li>
+                                <div class="qs-check-header">
+                                    <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="#F59E0B" stroke-width="2.5" stroke-linecap="round" stroke-linejoin="round"><circle cx="12" cy="12" r="10"/><line x1="12" y1="8" x2="12" y2="12"/><line x1="12" y1="16" x2="12.01" y2="16"/></svg>
+                                    <span data-i18n="quickstart.s2_item3">将 <code>/your/data/path</code> 替换为面板数据存储路径</span>
+                                </div>
+                                <div class="qs-check-code">
+                                    <div class="code-diff">
+                                        <div class="diff-context"><span class="code-keyword">volumes</span>:</div>
+                                        <div class="diff-remove"><span class="diff-mark">−</span>  - <span class="code-placeholder">/your/data/path</span>:<span class="code-placeholder">/your/data/path</span></div>
+                                        <div class="diff-add"><span class="diff-mark">+</span>  - <span class="code-keyword">./data</span>:<span class="code-keyword">./data</span></div>
+                                        <div class="diff-context"></div>
+                                        <div class="diff-context"><span class="code-keyword">environment</span>:</div>
+                                        <div class="diff-remove"><span class="diff-mark">−</span>  - DB_DIR=<span class="code-placeholder">/your/data/path</span></div>
+                                        <div class="diff-add"><span class="diff-mark">+</span>  - DB_DIR=<span class="code-keyword">./data</span></div>
+                                    </div>
+                                </div>
+                            </li>
+                        </ul>
+                    </div>
+                </div>
+
+                <div class="qs-connector" aria-hidden="true">
+                    <svg width="24" height="24" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><line x1="12" y1="5" x2="12" y2="19"/><polyline points="19 12 12 19 5 12"/></svg>
+                </div>
+
+                <!-- Step 3: Pull & Start -->
+                <div class="qs-step" data-animate>
+                    <div class="qs-step-num">03</div>
+                    <div class="qs-step-content">
+                        <h3 data-i18n="quickstart.s3_title">拉取镜像并启动</h3>
+                        <p data-i18n="quickstart.s3_desc">拉取 Docker Hub 镜像并启动，支持 amd64 / arm64 双架构</p>
+                        <span class="code-label" data-i18n="quickstart.s3_code1_label">拉取最新镜像</span>
+                        <div class="code-block">
+                            <span class="code-text">docker compose pull</span>
+                            <button class="copy-btn" data-copy="docker compose pull" title="Copy">
+                                <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><rect x="9" y="9" width="13" height="13" rx="2" ry="2"/><path d="M5 15H4a2 2 0 0 1-2-2V4a2 2 0 0 1 2-2h9a2 2 0 0 1 2 2v1"/></svg>
+                            </button>
+                        </div>
+                        <span class="code-label" data-i18n="quickstart.s3_code2_label">启动服务</span>
+                        <div class="code-block">
+                            <span class="code-text">docker compose up -d</span>
+                            <button class="copy-btn" data-copy="docker compose up -d" title="Copy">
+                                <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><rect x="9" y="9" width="13" height="13" rx="2" ry="2"/><path d="M5 15H4a2 2 0 0 1-2-2V4a2 2 0 0 1 2-2h9a2 2 0 0 1 2 2v1"/></svg>
+                            </button>
+                        </div>
+                    </div>
+                </div>
+
+                <div class="qs-connector" aria-hidden="true">
+                    <svg width="24" height="24" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><line x1="12" y1="5" x2="12" y2="19"/><polyline points="19 12 12 19 5 12"/></svg>
+                </div>
+
+                <!-- Step 4: Start Using -->
+                <div class="qs-step" data-animate>
+                    <div class="qs-step-num">04</div>
+                    <div class="qs-step-content">
+                        <h3 data-i18n="quickstart.s4_title">开始使用</h3>
+                        <p data-i18n="quickstart.s4_desc">浏览器访问面板地址，首次使用会引导你设置管理员密码</p>
+                        <div class="code-block">
+                            <span class="code-highlight">http://localhost:3000</span>
+                        </div>
+                    </div>
+                </div>
+            </div>
+
+            <!-- Compose Template (Manual) -->
+            <div class="qs-compose-preview">
+                <h3 class="qs-subtitle" data-i18n="quickstart.config_title">配置模板 (docker-compose.yml)</h3>
+                <div class="code-block code-block-lg">
+                    <div class="code-header">
+                        <span class="code-filename">docker-compose.yml</span>
+                        <button class="copy-btn" data-copy="services:
+  dashboard:
+    image: yinheng1989/docker-dashboard:latest
+    container_name: docker-dashboard
+    restart: unless-stopped
+    network_mode: host
+    volumes:
+      # 关键：左右路径必须一致
+      - /your/projects/path:/your/projects/path
+      - /your/data/path:/your/data/path
+      - /var/run/docker.sock:/var/run/docker.sock
+      - /proc:/host/proc:ro
+      - /sys:/host/sys:ro
+    environment:
+      # 生产环境务必修改
+      - JWT_SECRET=change-me-to-a-random-string
+      # 必须与volume挂载路径一致
+      - PROJECTS_DIR=/your/projects/path
+      - DB_DIR=/your/data/path" title="Copy">
+                            <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><rect x="9" y="9" width="13" height="13" rx="2" ry="2"/><path d="M5 15H4a2 2 0 0 1-2-2V4a2 2 0 0 1 2-2h9a2 2 0 0 1 2 2v1"/></svg>
+                        </button>
+                    </div>
+                    <pre><code><span class="code-keyword">services</span>:
+  <span class="code-keyword">dashboard</span>:
+    <span class="code-keyword">image</span>: yinheng1989/docker-dashboard:latest
+    <span class="code-keyword">container_name</span>: docker-dashboard
+    <span class="code-keyword">restart</span>: unless-stopped
+    <span class="code-keyword">network_mode</span>: host
+    <span class="code-keyword">volumes</span>:
+      <span class="code-comment"># <svg class="code-alert-dot" width="10" height="10" viewBox="0 0 10 10"><circle cx="5" cy="5" r="4" fill="#EF4444"/></svg> 关键：左右路径必须一致</span>
+      - <span class="code-placeholder">/your/projects/path</span>:<span class="code-placeholder">/your/projects/path</span>
+      - <span class="code-placeholder">/your/data/path</span>:<span class="code-placeholder">/your/data/path</span>
+      - /var/run/docker.sock:/var/run/docker.sock
+      - /proc:/host/proc:ro
+      - /sys:/host/sys:ro
+    <span class="code-keyword">environment</span>:
+      <span class="code-comment"># <svg class="code-alert-dot" width="10" height="10" viewBox="0 0 10 10"><circle cx="5" cy="5" r="4" fill="#EF4444"/></svg> 生产环境务必修改</span>
+      - JWT_SECRET=<span class="code-placeholder">change-me-to-a-random-string</span>
+      <span class="code-comment"># <svg class="code-alert-dot" width="10" height="10" viewBox="0 0 10 10"><circle cx="5" cy="5" r="4" fill="#EF4444"/></svg> 必须与volume挂载路径一致</span>
+      - PROJECTS_DIR=<span class="code-placeholder">/your/projects/path</span>
+      - DB_DIR=<span class="code-placeholder">/your/data/path</span></code></pre>
+                </div>
+            </div>
+
+            <!-- Important Notes -->
+            <div class="qs-notes">
+                <h3 class="qs-notes-title">
+                    <svg width="24" height="24" viewBox="0 0 24 24" fill="none" stroke="#F59E0B" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M10.29 3.86L1.82 18a2 2 0 0 0 1.71 3h16.94a2 2 0 0 0 1.71-3L13.71 3.86a2 2 0 0 0-3.42 0z"/><line x1="12" y1="9" x2="12" y2="13"/><line x1="12" y1="17" x2="12.01" y2="17"/></svg>
+                    <span data-i18n="quickstart.notes_title">重要注意事项</span>
+                </h3>
+                <p class="qs-notes-subtitle" data-i18n="quickstart.notes_subtitle">部署前务必了解以下关键配置，否则 Compose 项目可能无法正常工作</p>
+                <div class="notes-grid">
+                    <div class="note-card note-card-critical">
+                        <div class="note-icon">
+                            <svg width="24" height="24" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M10.29 3.86L1.82 18a2 2 0 0 0 1.71 3h16.94a2 2 0 0 0 1.71-3L13.71 3.86a2 2 0 0 0-3.42 0z"/><line x1="12" y1="9" x2="12" y2="13"/><line x1="12" y1="17" x2="12.01" y2="17"/></svg>
+                        </div>
+                        <div class="note-body">
+                            <h4 data-i18n="quickstart.note1_title">同路径挂载（最关键）</h4>
+                            <p data-i18n="quickstart.note1_desc">Volume 挂载的宿主机路径必须与容器内路径一致（左=右）。这是为了让 Compose 文件中的相对路径卷（如 <code>./data:/data</code>）正常工作。如果你不需要支持相对路径卷，可以不挂载 PROJECTS_DIR。</p>
+                        </div>
+                    </div>
+                    <div class="note-card note-card-warning">
+                        <div class="note-icon">
+                            <svg width="24" height="24" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M10.29 3.86L1.82 18a2 2 0 0 0 1.71 3h16.94a2 2 0 0 0 1.71-3L13.71 3.86a2 2 0 0 0-3.42 0z"/><line x1="12" y1="9" x2="12" y2="13"/><line x1="12" y1="17" x2="12.01" y2="17"/></svg>
+                        </div>
+                        <div class="note-body">
+                            <h4 data-i18n="quickstart.note2_title">JWT_SECRET 安全密钥</h4>
+                            <p data-i18n="quickstart.note2_desc">生产环境务必修改 <code>JWT_SECRET</code> 为随机字符串（可使用 <code>openssl rand -base64 32</code> 生成），否则存在安全风险。</p>
+                        </div>
+                    </div>
+                    <div class="note-card note-card-warning">
+                        <div class="note-icon">
+                            <svg width="24" height="24" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><rect x="3" y="11" width="18" height="11" rx="2" ry="2"/><path d="M7 11V7a5 5 0 0 1 10 0v4"/></svg>
+                        </div>
+                        <div class="note-body">
+                            <h4 data-i18n="quickstart.note3_title">Docker Socket 权限</h4>
+                            <p data-i18n="quickstart.note3_desc">挂载 <code>/var/run/docker.sock</code> 相当于赋予面板完整的 Docker 控制权限。请确保面板端口不暴露在公网，或配置反向代理 + HTTPS。</p>
+                        </div>
+                    </div>
+                    <div class="note-card note-card-info">
+                        <div class="note-icon">
+                            <svg width="24" height="24" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><circle cx="12" cy="12" r="10"/><line x1="12" y1="16" x2="12" y2="12"/><line x1="12" y1="8" x2="12.01" y2="8"/></svg>
+                        </div>
+                        <div class="note-body">
+                            <h4 data-i18n="quickstart.note4_title">网络模式选择</h4>
+                            <p data-i18n="quickstart.note4_desc">示例使用 <code>host</code> 网络模式（最简配置），如果你的环境有端口冲突，可改为 <code>bridge</code> 模式并暴露端口：<code>ports: - "8070:3000"</code>。</p>
+                        </div>
+                    </div>
+                    <div class="note-card note-card-info">
+                        <div class="note-icon">
+                            <svg width="24" height="24" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><circle cx="12" cy="12" r="10"/><line x1="12" y1="16" x2="12" y2="12"/><line x1="12" y1="8" x2="12.01" y2="8"/></svg>
+                        </div>
+                        <div class="note-body">
+                            <h4 data-i18n="quickstart.note5_title">系统监控依赖</h4>
+                            <p data-i18n="quickstart.note5_desc">CPU/内存/磁盘监控需要挂载 <code>/proc:/host/proc:ro</code> 和 <code>/sys:/host/sys:ro</code>（只读），缺失将导致监控数据为空。</p>
+                        </div>
+                    </div>
+                    <div class="note-card note-card-info">
+                        <div class="note-icon">
+                            <svg width="24" height="24" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><circle cx="12" cy="12" r="10"/><line x1="12" y1="16" x2="12" y2="12"/><line x1="12" y1="8" x2="12.01" y2="8"/></svg>
+                        </div>
+                        <div class="note-body">
+                            <h4 data-i18n="quickstart.note6_title">Compose V2 要求</h4>
+                            <p data-i18n="quickstart.note6_desc">面板使用 <code>docker compose</code> 命令（非 <code>docker-compose</code>），请确保已安装 Docker Compose V2。</p>
+                        </div>
+                    </div>
+                </div>
+            </div>
+        </div>
+
+        <!-- ====== TAB: One-Click Deploy ====== -->
+        <div class="qs-tab-content active" id="tab-oneclick" role="tabpanel">
+            <p class="qs-tab-desc" data-i18n="quickstart.oneclick_desc">无需手动配置，两条命令即可启动</p>
+            <div class="qs-steps">
+                <!-- Step 1: Download -->
+                <div class="qs-step" data-animate>
+                    <div class="qs-step-num">01</div>
+                    <div class="qs-step-content">
+                        <h3 data-i18n="quickstart.oneclick_s1_title">下载配置文件</h3>
+                        <p data-i18n="quickstart.oneclick_s1_desc">创建目录并下载一键部署版 docker-compose.yml</p>
+                        <span class="code-label" data-i18n="quickstart.oneclick_step1_code1">创建目录</span>
+                        <div class="code-block">
+                            <span class="code-text">mkdir -p ~/docker-dashboard && cd ~/docker-dashboard</span>
+                            <button class="copy-btn" data-copy="mkdir -p ~/docker-dashboard && cd ~/docker-dashboard" title="Copy">
+                                <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><rect x="9" y="9" width="13" height="13" rx="2" ry="2"/><path d="M5 15H4a2 2 0 0 1-2-2V4a2 2 0 0 1 2-2h9a2 2 0 0 1 2 2v1"/></svg>
+                            </button>
+                        </div>
+                        <span class="code-label" data-i18n="quickstart.oneclick_step1_code2">下载 Compose 文件</span>
+                        <div class="code-block">
+                            <span class="code-text">wget https://raw.githubusercontent.com/yinheng1989/docker-dashboard/main/docker-compose%20copy.yml -O docker-compose.yml</span>
+                            <button class="copy-btn" data-copy="wget https://raw.githubusercontent.com/yinheng1989/docker-dashboard/main/docker-compose%20copy.yml -O docker-compose.yml" title="Copy">
+                                <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><rect x="9" y="9" width="13" height="13" rx="2" ry="2"/><path d="M5 15H4a2 2 0 0 1-2-2V4a2 2 0 0 1 2-2h9a2 2 0 0 1 2 2v1"/></svg>
+                            </button>
+                        </div>
+                    </div>
+                </div>
+
+                <div class="qs-connector" aria-hidden="true">
+                    <svg width="24" height="24" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><line x1="12" y1="5" x2="12" y2="19"/><polyline points="19 12 12 19 5 12"/></svg>
+                </div>
+
+                <!-- Step 2: Start -->
+                <div class="qs-step" data-animate>
+                    <div class="qs-step-num">02</div>
+                    <div class="qs-step-content">
+                        <h3 data-i18n="quickstart.oneclick_s2_title">一键启动</h3>
+                        <p data-i18n="quickstart.oneclick_s2_desc">拉取镜像并启动，Docker 命名卷自动创建，零配置</p>
+                        <span class="code-label" data-i18n="quickstart.oneclick_step2_code1">拉取镜像并启动</span>
+                        <div class="code-block">
+                            <span class="code-text">docker compose up -d</span>
+                            <button class="copy-btn" data-copy="docker compose up -d" title="Copy">
+                                <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><rect x="9" y="9" width="13" height="13" rx="2" ry="2"/><path d="M5 15H4a2 2 0 0 1-2-2V4a2 2 0 0 1 2-2h9a2 2 0 0 1 2 2v1"/></svg>
+                            </button>
+                        </div>
+                    </div>
+                </div>
+
+                <div class="qs-connector" aria-hidden="true">
+                    <svg width="24" height="24" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><line x1="12" y1="5" x2="12" y2="19"/><polyline points="19 12 12 19 5 12"/></svg>
+                </div>
+
+                <!-- Step 3: Access -->
+                <div class="qs-step" data-animate>
+                    <div class="qs-step-num">03</div>
+                    <div class="qs-step-content">
+                        <h3 data-i18n="quickstart.oneclick_s3_title">开始使用</h3>
+                        <p data-i18n="quickstart.oneclick_s3_desc">浏览器访问面板，首次使用会引导你设置管理员密码</p>
+                        <div class="code-block">
+                            <span class="code-highlight">http://localhost:8070</span>
+                        </div>
+                    </div>
+                </div>
+            </div>
+
+            <!-- One-Click Compose Preview -->
+            <div class="qs-compose-preview">
+                <h3 class="qs-subtitle" data-i18n="quickstart.oneclick_config_title">一键部署配置 (docker-compose.yml)</h3>
+                <div class="code-block code-block-lg">
+                    <div class="code-header">
+                        <span class="code-filename">docker-compose.yml</span>
+                        <button class="copy-btn" data-copy="services:
+  dashboard:
+    image: yinheng1989/docker-dashboard:latest
+    container_name: docker-dashboard
+    restart: unless-stopped
+    ports:
+      - '8070:3000'
+    volumes:
+      - dashboard-projects:/projects
+      - dashboard-data:/data
+      - /var/run/docker.sock:/var/run/docker.sock
+      - /proc:/host/proc:ro
+      - /sys:/host/sys:ro
+    environment:
+      - JWT_SECRET=${JWT_SECRET:-docker-dashboard-default-change-me}
+
+volumes:
+  dashboard-projects:
+  dashboard-data:" title="Copy">
+                            <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><rect x="9" y="9" width="13" height="13" rx="2" ry="2"/><path d="M5 15H4a2 2 0 0 1-2-2V4a2 2 0 0 1 2-2h9a2 2 0 0 1 2 2v1"/></svg>
+                        </button>
+                    </div>
+                    <pre><code><span class="code-keyword">services</span>:
+  <span class="code-keyword">dashboard</span>:
+    <span class="code-keyword">image</span>: yinheng1989/docker-dashboard:latest
+    <span class="code-keyword">container_name</span>: docker-dashboard
+    <span class="code-keyword">restart</span>: unless-stopped
+    <span class="code-keyword">ports</span>:
+      - <span class="code-keyword">"8070:3000"</span>
+    <span class="code-keyword">volumes</span>:
+      <span class="code-comment"># Docker 命名卷，自动创建，无需手动配置路径</span>
+      - dashboard-projects:/projects
+      - dashboard-data:/data
+      - /var/run/docker.sock:/var/run/docker.sock
+      <span class="code-comment"># 系统监控数据源（只读）</span>
+      - /proc:/host/proc:ro
+      - /sys:/host/sys:ro
+    <span class="code-keyword">environment</span>:
+      <span class="code-comment"># 默认密钥，生产环境请修改</span>
+      - JWT_SECRET=<span class="code-keyword">${JWT_SECRET:-docker-dashboard-default-change-me}</span>
+
+<span class="code-keyword">volumes</span>:
+  <span class="code-keyword">dashboard-projects</span>:
+  <span class="code-keyword">dashboard-data</span>:</code></pre>
+                </div>
+            </div>
+
+            <!-- One-Click Features -->
+            <div class="qs-notes">
+                <h3 class="qs-notes-title">
+                    <svg width="24" height="24" viewBox="0 0 24 24" fill="none" stroke="#34D399" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><polyline points="20 6 9 17 4 12"/></svg>
+                    <span data-i18n="quickstart.oneclick_note_title">适合场景</span>
+                </h3>
+                <p class="qs-notes-subtitle" data-i18n="quickstart.oneclick_note_desc">适合快速体验、测试环境或个人使用。如需管理已有的 Compose 项目并支持相对路径卷挂载，请使用「手动部署教程」方案。</p>
+                <div class="notes-grid">
+                    <div class="note-card note-card-success">
+                        <div class="note-icon">
+                            <svg width="24" height="24" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><polyline points="20 6 9 17 4 12"/></svg>
+                        </div>
+                        <div class="note-body">
+                            <h4 data-i18n="quickstart.oneclick_feature1">使用 <code>Docker 命名卷</code> 存储数据</h4>
+                            <p>Docker 自动创建和管理，无需手动配置路径，升级迁移更简单。</p>
+                        </div>
+                    </div>
+                    <div class="note-card note-card-success">
+                        <div class="note-icon">
+                            <svg width="24" height="24" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><polyline points="20 6 9 17 4 12"/></svg>
+                        </div>
+                        <div class="note-body">
+                            <h4 data-i18n="quickstart.oneclick_feature2">零配置启动</h4>
+                            <p>下载即用，一条命令拉起全套服务，无需关心路径挂载和权限问题。</p>
+                        </div>
+                    </div>
+                    <div class="note-card note-card-success">
+                        <div class="note-icon">
+                            <svg width="24" height="24" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><polyline points="20 6 9 17 4 12"/></svg>
+                        </div>
+                        <div class="note-body">
+                            <h4 data-i18n="quickstart.oneclick_feature3">支持 amd64 / arm64</h4>
+                            <p>Docker 自动拉取匹配架构的镜像，树莓派也能完美运行。</p>
+                        </div>
+                    </div>
+                </div>
+            </div>
+        </div>
+    </section>
+
+    <!-- ========== ARCHITECTURE ========== -->
+    <section class="architecture" id="architecture">
+        <div class="section-header">
+            <h2 class="section-title" data-i18n="arch.title">技术架构</h2>
+            <p class="section-desc" data-i18n="arch.desc">简洁高效的单体架构，兼顾性能与可维护性</p>
+        </div>
+        <div class="arch-diagram" data-animate>
+            <div class="arch-layer arch-layer-frontend">
+                <div class="arch-layer-label" data-i18n="arch.frontend">前端 SPA</div>
+                <div class="arch-techs">
+                    <span class="arch-tag">React 18</span>
+                    <span class="arch-tag">TypeScript</span>
+                    <span class="arch-tag">Vite 6</span>
+                    <span class="arch-tag">Tailwind CSS 3</span>
+                    <span class="arch-tag">Recharts</span>
+                    <span class="arch-tag">i18next</span>
+                    <span class="arch-tag">Lucide Icons</span>
+                </div>
+            </div>
+            <div class="arch-arrow">
+                <svg width="24" height="40" viewBox="0 0 24 40" fill="none" stroke="currentColor" stroke-width="2"><line x1="12" y1="0" x2="12" y2="40"/><polyline points="5 33 12 40 19 33"/></svg>
+            </div>
+            <div class="arch-layer arch-layer-backend">
+                <div class="arch-layer-label" data-i18n="arch.backend">后端服务 (:3000)</div>
+                <div class="arch-techs">
+                    <span class="arch-tag">Express.js</span>
+                    <span class="arch-tag">WebSocket</span>
+                    <span class="arch-tag">JWT</span>
+                    <span class="arch-tag">SQLite</span>
+                    <span class="arch-tag">Unix Socket</span>
+                    <span class="arch-tag">Docker CLI</span>
+                </div>
+            </div>
+            <div class="arch-arrow-group">
+                <div class="arch-arrow">
+                    <svg width="24" height="40" viewBox="0 0 24 40" fill="none" stroke="currentColor" stroke-width="2"><line x1="12" y1="0" x2="12" y2="40"/><polyline points="5 33 12 40 19 33"/></svg>
+                </div>
+                <div class="arch-arrow">
+                    <svg width="24" height="40" viewBox="0 0 24 40" fill="none" stroke="currentColor" stroke-width="2"><line x1="12" y1="0" x2="12" y2="40"/><polyline points="5 33 12 40 19 33"/></svg>
+                </div>
+            </div>
+            <div class="arch-layer-group">
+                <div class="arch-layer arch-layer-docker">
+                    <div class="arch-layer-label" data-i18n="arch.docker">Docker Engine</div>
+                    <div class="arch-techs">
+                        <span class="arch-tag" data-i18n="arch.tag_socket">Docker Socket</span>
+                        <span class="arch-tag" data-i18n="arch.tag_cli">Docker CLI</span>
+                    </div>
+                </div>
+                <div class="arch-layer arch-layer-data">
+                    <div class="arch-layer-label" data-i18n="arch.storage">数据存储</div>
+                    <div class="arch-techs">
+                        <span class="arch-tag" data-i18n="arch.tag_sqlite">SQLite (WAL)</span>
+                    </div>
+                </div>
+            </div>
+        </div>
+    </section>
+
+    <!-- ========== FOOTER ========== -->
+    <footer class="footer">
+        <div class="footer-inner">
+            <div class="footer-brand">
+                <span class="footer-logo">
+                    <svg class="logo-icon" width="22" height="22" viewBox="0 0 32 32" fill="none"><rect width="32" height="32" rx="7" fill="#2496ED"/><path d="M24 10h-2l-1 4h-3l1-4h-2l-1 4h-3l1-4h-2l-1 4H9l-1 3h2l-.5 2H7l-1 3h2l-.5 2h13l.5-2h3l.5-2h-3l.5-2h3l.5-2h-3l.5-2h-3l.5-2zm-7.5 7l.5-2h3l-.5 2h-3z" fill="white"/></svg>
+                    <span>Docker Dashboard</span>
+                </span>
+                <p data-i18n="footer.tagline">轻量级 Docker 可视化管理面板，让运维更高效</p>
+            </div>
+            <div class="footer-links">
+                <div class="footer-col">
+                    <h4 data-i18n="footer.links">链接</h4>
+                    <a href="https://github.com/yinheng1989/docker-dashboard" target="_blank" rel="noopener">GitHub</a>
+                    <a href="https://hub.docker.com/r/yinheng1989/docker-dashboard" target="_blank" rel="noopener">Docker Hub</a>
+                </div>
+                <div class="footer-col">
+                    <h4 data-i18n="footer.resources">资源</h4>
+                    <a href="https://github.com/yinheng1989/docker-dashboard/blob/main/README.md" target="_blank" rel="noopener" data-i18n="footer.docs">文档</a>
+                    <a href="https://github.com/yinheng1989/docker-dashboard/blob/main/LICENSE" target="_blank" rel="noopener" data-i18n="footer.license">许可证</a>
+                </div>
+            </div>
+        </div>
+        <div class="footer-bottom">
+            <p>© 2026 Docker Dashboard. <span data-i18n="footer.opensource">开源于 MIT License</span>.</p>
+        </div>
+    </footer>
+
+    <!-- ========== SCRIPTS ========== -->
+    <script src="js/locales/zh.js"></script>
+    <script src="js/locales/en.js"></script>
+    <script src="js/i18n.js"></script>
+    <script src="js/main.js"></script>
+</body>
+</html>
