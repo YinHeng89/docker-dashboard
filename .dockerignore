@@ -14,4 +14,3 @@ publish.sh
 .idea/
 *.md
 !README.md
-website/
