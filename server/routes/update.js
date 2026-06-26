@@ -105,7 +105,14 @@ function runCommand(cmd, args, cwd, res, label) {
     let outSize = 0, errSize = 0;
     proc.stdout.on('data', d => { const t = d.toString(); outSize += t.length; sendProgress(res, { type: 'log', container: label, message: t, stream: 'stdout' }); });
     proc.stderr.on('data', d => { const t = d.toString(); errSize += t.length; sendProgress(res, { type: 'log', container: label, message: t, stream: 'stderr' }); });
-    proc.on('close', code => { log(`runCommand → [${label}] code=${code} (${Date.now() - startTime}ms) out:${outSize}B err:${errSize}B`); resolve(code); });
+    proc.on('close', code => {
+      const elapsed = Date.now() - startTime;
+      const summary = [`runCommand → [${label}] code=${code} (${elapsed}ms)`];
+      if (outSize > 0) summary.push(`\nstdout (${outSize}B)`);
+      if (errSize > 0) summary.push(`\nstderr (${errSize}B)`);
+      log(summary.join(''));
+      resolve(code);
+    });
     proc.on('error', err => { logError(`runCommand → [${label}] error: ${err.message}`); sendProgress(res, { type: 'log', container: label, message: err.message, stream: 'stderr' }); resolve(-1); });
   });
 }
@@ -321,14 +328,29 @@ async function updateComposeServices(containers, projectName, res) {
   if (!composeFile) { sendProgress(res, { type: 'all-error', message: '找不到 compose 文件' }); return; }
   const composeBaseArgs = ['compose', '-f', composeFile];
 
-  // 按 compose service 分组（优先用 label，兜底用容器名推断）
+  // 按 compose service 分组
+  // 优先级：
+  //   1. 前端传入的 composeService（来自 label）
+  //   2. docker inspect 读取 Config.Labels['com.docker.compose.service']
+  // 绝不再通过容器名称推导（container_name 会破坏推导）
   const serviceMap = new Map();
   for (const c of containers) {
-    // 优先从前端传入的 composeService（来自 label），兜底正则推断
     let svcName = c.composeService;
+    if (!svcName && c.containerId) {
+      try {
+        const containerInfo = await dockerRequest('GET', `/containers/${c.containerId}/json`);
+        svcName = containerInfo.Config?.Labels?.['com.docker.compose.service'];
+        if (svcName) {
+          log(`[label 获取] ${c.containerName} → compose service = ${svcName}`);
+        }
+      } catch (e) {
+        logError(`无法 inspect ${c.containerName}: ${e.message}`);
+      }
+    }
     if (!svcName) {
-      // 兜底: project-service-1 → service
-      svcName = c.containerName.replace(/^[^-]+-/, '').replace(/-[0-9]+$/, '');
+      logError(`无法获取 ${c.containerName} 的 compose service，跳过该容器`);
+      sendProgress(res, { type: 'step', container: c.containerId, containerName: c.containerName, step: 'error', message: `无法识别 Compose Service: ${c.containerName}`, percent: 0 });
+      continue;
     }
     if (!serviceMap.has(svcName)) serviceMap.set(svcName, []);
     serviceMap.get(svcName).push(c);

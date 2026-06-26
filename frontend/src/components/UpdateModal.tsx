@@ -149,7 +149,7 @@ export default function UpdateModal({
         containers: toUpdate.map(r => ({
           containerId: r.containerId,
           containerName: r.containerName,
-          composeService: r.composeService || r.containerName.replace(/^[^-]+-/, '').replace(/-[0-9]+$/, ''),
+          composeService: r.composeService,
         })),
         projectName: projectDirName,
       }
