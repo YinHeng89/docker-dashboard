@@ -194,12 +194,16 @@ async function getRegistryToken(registry, repo) {
   const cached = getCachedToken(registry, repo);
   if (cached) return cached;
 
-  const host = registry === 'registry-1.docker.io' ? 'registry-1.docker.io' : registry;
-  const registryLabel = registry === 'registry-1.docker.io' ? 'Docker Hub' : registry;
-  log(`getRegistryToken → ${registryLabel} repo=${repo}`);
+  // 通过 /v2/ 获取 WWW-Authenticate
+  const wwwAuth = await getV2WwwAuth(registry);
+  if (!wwwAuth) return null;
 
-  // 1. 请求 /v2/ 获取 WWW-Authenticate 信息
-  let wwwAuth;
+  return getTokenFromWwwAuth(registry, repo, wwwAuth);
+}
+
+// 请求 /v2/ 获取 WWW-Authenticate 头（无缓存，纯网络请求）
+async function getV2WwwAuth(registry) {
+  const host = registry === 'registry-1.docker.io' ? 'registry-1.docker.io' : registry;
   try {
     const v2Res = await new Promise((resolve) => {
       const req = https.request({
@@ -209,77 +213,129 @@ async function getRegistryToken(registry, repo) {
       }, (res) => {
         resolve({ statusCode: res.statusCode, headers: res.headers });
       });
-      req.on('error', (e) => { logError(`getRegistryToken → /v2/ 请求失败: ${e.message}`); resolve({ statusCode: 0, headers: {} }); });
+      req.on('error', () => resolve({ statusCode: 0, headers: {} }));
       req.on('timeout', () => { req.destroy(); resolve({ statusCode: 0, headers: {} }); });
       req.end();
     });
 
     if (v2Res.statusCode === 200) {
-      // Registry 不需要认证
-      log(`getRegistryToken → ${registryLabel} 无需认证`);
+      // /v2/ 返回 200，Registry 未在此端点要求认证（如 GHCR）
+      // 但实际 manifest 请求可能仍需 token，此时由调用方通过 manifest 401 响应获取
       return null;
     }
 
-    wwwAuth = v2Res.headers['www-authenticate'];
+    const wwwAuth = v2Res.headers['www-authenticate'];
     if (!wwwAuth) {
-      logError(`getRegistryToken → ${registryLabel} 返回 ${v2Res.statusCode} 但无 WWW-Authenticate 头`);
+      logError(`getV2WwwAuth → ${host} 返回 ${v2Res.statusCode} 但无 WWW-Authenticate 头`);
       return null;
     }
+    return wwwAuth;
   } catch (e) {
-    logError(`getRegistryToken → ${registryLabel} 连接失败: ${e.message}`);
+    logError(`getV2WwwAuth → ${host} 连接失败: ${e.message}`);
     return null;
   }
+}
 
-  // 2. 解析 WWW-Authenticate
+// 根据 WWW-Authenticate 头获取 token
+async function getTokenFromWwwAuth(registry, repo, wwwAuth) {
+  // 先查缓存
+  const cached = getCachedToken(registry, repo);
+  if (cached) return cached;
+
+  const registryLabel = registry === 'registry-1.docker.io' ? 'Docker Hub' : registry;
+  log(`getTokenFromWwwAuth → ${registryLabel} repo=${repo}`);
+
   const authInfo = parseWwwAuthenticate(wwwAuth);
   if (!authInfo) {
-    logError(`getRegistryToken → 无法解析 WWW-Authenticate: ${wwwAuth}`);
+    logError(`getTokenFromWwwAuth → 无法解析 WWW-Authenticate: ${wwwAuth}`);
     return null;
   }
-  log(`getRegistryToken → realm=${authInfo.realm}, service=${authInfo.service || 'N/A'}`);
+  log(`getTokenFromWwwAuth → realm=${authInfo.realm}, service=${authInfo.service || 'N/A'}`);
 
-  // 3. 请求 token
   try {
     const scope = `repository:${repo}:pull`;
     const params = new URLSearchParams();
     if (authInfo.service) params.set('service', authInfo.service);
     params.set('scope', scope);
-    // 去掉 realm URL 已有的 query 参数（如有），追加我们的参数
     const realmBase = authInfo.realm.split('?')[0];
     const tokenUrl = `${realmBase}?${params.toString()}`;
 
     const tokenRes = await httpsGet(tokenUrl, 10000);
     if (tokenRes.statusCode !== 200 || !tokenRes.body?.token) {
-      logError(`getRegistryToken → realm 返回 ${tokenRes.statusCode}, 无 token`);
+      logError(`getTokenFromWwwAuth → realm 返回 ${tokenRes.statusCode}, 无 token`);
       return null;
     }
 
     const token = tokenRes.body.token;
     const expiresIn = tokenRes.body.expires_in || 300;
     setCachedToken(registry, repo, token, expiresIn);
-    log(`getRegistryToken → ${registryLabel} 获取成功 (${expiresIn}s)`);
+    log(`getTokenFromWwwAuth → ${registryLabel} 获取成功 (${expiresIn}s)`);
     return token;
   } catch (e) {
-    logError(`getRegistryToken → realm 请求失败: ${e.message}`);
+    logError(`getTokenFromWwwAuth → realm 请求失败: ${e.message}`);
     return null;
   }
 }
 
-// 请求 Registry Manifest → 返回 { statusCode, digest, error }
+// 通过 GET manifest 触发 401 获取 WWW-Authenticate（GHCR 等对 HEAD 返回 404，对 GET 返回 401）
+// 拿到 header 后立即中止连接，不下载 manifest 内容
+function getAuthFromManifest(registry, repo, tag) {
+  const host = registry === 'registry-1.docker.io' ? 'registry-1.docker.io' : registry;
+  const p = `/v2/${repo}/manifests/${encodeURIComponent(tag)}`;
+  log(`getAuthFromManifest → GET https://${host}${p}`);
+
+  return new Promise((resolve) => {
+    const req = https.request({
+      hostname: host, path: p, method: 'GET',
+      headers: { 'Accept': 'application/vnd.docker.distribution.manifest.v2+json' },
+      timeout: 10000, rejectUnauthorized: true,
+    }, (res) => {
+      const wwwAuth = res.headers['www-authenticate'];
+      req.destroy(); // 拿到 header 即中止，不浪费带宽下载 manifest
+      resolve(wwwAuth || null);
+    });
+    req.on('error', () => resolve(null));
+    req.on('timeout', () => { req.destroy(); resolve(null); });
+    req.end();
+  });
+}
+
+// 请求 Registry Manifest → 返回 { statusCode, digest, wwwAuthenticate, error, body }
+// 先用 HEAD 获取 digest（零下载）；非 200 时自动降级 GET 读取错误详情
 function fetchRegistryManifest(registry, repo, tag, token) {
   const host = registry === 'registry-1.docker.io' ? 'registry-1.docker.io' : registry;
   const p = `/v2/${repo}/manifests/${encodeURIComponent(tag)}`;
   const headers = {
-    'Accept': 'application/vnd.docker.distribution.manifest.v2+json, application/vnd.oci.image.manifest.v1+json, application/vnd.docker.distribution.manifest.list.v2+json',
+    'Accept': 'application/vnd.docker.distribution.manifest.v2+json, application/vnd.oci.image.manifest.v1+json, application/vnd.docker.distribution.manifest.list.v2+json, application/vnd.oci.image.index.v1+json',
   };
   if (token) headers['Authorization'] = `Bearer ${token}`;
-  log(`fetchRegistryManifest → HEAD https://${host}${p}`);
+  const fullUrl = `https://${host}${p}`;
+  log(`fetchRegistryManifest → HEAD ${fullUrl} token=${token ? 'yes' : 'no'}`);
 
   return new Promise((resolve) => {
     const reqStart = Date.now();
-    const req = https.request({ hostname: host, path: p, method: 'HEAD', headers, timeout: 15000, rejectUnauthorized: true }, (res) => {
+    const req = https.request({ hostname: host, path: p, method: 'HEAD', headers, timeout: 15000, rejectUnauthorized: true }, async (res) => {
       const digest = res.headers['docker-content-digest'];
-      resolve({ statusCode: res.statusCode, digest: digest || null, elapsed: Date.now() - reqStart });
+      const wwwAuth = res.headers['www-authenticate'];
+      const elapsed = Date.now() - reqStart;
+      log(`fetchRegistryManifest → HEAD ${res.statusCode} (${elapsed}ms)`);
+
+      // 成功：直接返回
+      if (res.statusCode === 200) {
+        return resolve({ statusCode: 200, digest: digest || null, wwwAuthenticate: wwwAuth || null, elapsed });
+      }
+
+      // 非 200：用 GET 获取响应体，解析 Registry 返回的错误详情
+      getWithBody(host, p, headers).then(({ statusCode, body, wwwAuth: getWwwAuth }) => {
+        if (body) logError(`fetchRegistryManifest → ${statusCode} 响应体: ${body}`);
+        resolve({
+          statusCode,
+          digest: null,
+          wwwAuthenticate: getWwwAuth || wwwAuth || null,
+          body: body || null,
+          elapsed,
+        });
+      });
     });
     req.on('error', (e) => {
       const code = e.code || '';
@@ -288,6 +344,27 @@ function fetchRegistryManifest(registry, repo, tag, token) {
       else resolve({ statusCode: 0, digest: null, error: 'network_error', message: e.message });
     });
     req.on('timeout', () => { req.destroy(); resolve({ statusCode: 0, digest: null, error: 'network_error', message: '请求超时' }); });
+    req.end();
+  });
+}
+
+// GET 请求并返回 body（用于错误诊断），同时保留 www-authenticate
+function getWithBody(host, path, extraHeaders = {}) {
+  return new Promise((resolve) => {
+    const req = https.request({
+      hostname: host, path, method: 'GET',
+      headers: { ...extraHeaders },
+      timeout: 15000, rejectUnauthorized: true,
+    }, (res) => {
+      let data = '';
+      res.on('data', c => data += c);
+      res.on('end', () => {
+        const wwwAuth = res.headers['www-authenticate'];
+        resolve({ statusCode: res.statusCode, body: data.slice(0, 500) || null, wwwAuth: wwwAuth || null });
+      });
+    });
+    req.on('error', () => resolve({ statusCode: 0, body: null }));
+    req.on('timeout', () => { req.destroy(); resolve({ statusCode: 0, body: null }); });
     req.end();
   });
 }
@@ -341,10 +418,32 @@ async function checkContainerUpdate(containerId) {
   const localDigest = localRepoDigests[0]?.split('@')[1] || null;
 
   // 6. 远端 manifest（通用 OAuth2 token 流程，支持 Docker Hub / GHCR / 自建 Registry）
-  let remoteResult;
+  let remoteResult, token;
+  const registryLabel = parsed.registry === 'registry-1.docker.io' ? 'Docker Hub' : parsed.registry;
   try {
-    const token = await getRegistryToken(parsed.registry, parsed.repo);
+    token = await getRegistryToken(parsed.registry, parsed.repo);
     remoteResult = await fetchRegistryManifest(parsed.registry, parsed.repo, parsed.tag, token);
+
+    // 重试策略：manifest 返回 401/404 时，尝试获取/刷新 token
+    // 场景 1）无 token + 401/404 → 多路径获取 token
+    // 场景 2）有 token + 404 → token 可能无效，尝试无 token 请求或重新获取 token
+    if (remoteResult.statusCode === 401 || remoteResult.statusCode === 404) {
+      const shouldRetry = !token || remoteResult.statusCode === 404;
+      if (shouldRetry) {
+        log(`checkContainerUpdate → ${registryLabel} 返回 ${remoteResult.statusCode}，尝试补获/刷新 token 重试`);
+        // 多路径尝试获取 WWW-Authenticate
+        const wwwAuth = remoteResult.wwwAuthenticate
+          || await getAuthFromManifest(parsed.registry, parsed.repo, parsed.tag)
+          || await getV2WwwAuth(parsed.registry);
+        if (wwwAuth) {
+          const newToken = await getTokenFromWwwAuth(parsed.registry, parsed.repo, wwwAuth);
+          if (newToken && newToken !== token) {
+            log(`checkContainerUpdate → 已获取 token，重试 manifest`);
+            remoteResult = await fetchRegistryManifest(parsed.registry, parsed.repo, parsed.tag, newToken);
+          }
+        }
+      }
+    }
   } catch (e) {
     logError(`checkContainerUpdate → Registry 连接失败: ${e.message}`);
     return { imageName, containerName, status: 'network_error', hasUpdate: false, currentDigest: localDigest, error: `无法连接 Registry: ${e.message}` };
