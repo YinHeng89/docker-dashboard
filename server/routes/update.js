@@ -14,20 +14,22 @@ function logError(...args) { console.error(`${LOG_PREFIX} [${new Date().toISOStr
 
 // ==================== 缓存 ====================
 
-// Docker Hub Token 缓存: { repo: { token, expiresAt } }
+// Registry Token 缓存: key = "registry|repo", value = { token, expiresAt }
 const tokenCache = new Map();
-function getCachedToken(repo) {
-  const entry = tokenCache.get(repo);
+function getCachedToken(registry, repo) {
+  const key = `${registry}|${repo}`;
+  const entry = tokenCache.get(key);
   if (entry && Date.now() < entry.expiresAt) {
-    log(`tokenCache → 命中 ${repo}`);
+    log(`tokenCache → 命中 ${key}`);
     return entry.token;
   }
-  tokenCache.delete(repo);
+  tokenCache.delete(key);
   return null;
 }
-function setCachedToken(repo, token, expiresInSec = 300) {
-  tokenCache.set(repo, { token, expiresAt: Date.now() + expiresInSec * 1000 });
-  log(`tokenCache → 缓存 ${repo} (${expiresInSec}s)`);
+function setCachedToken(registry, repo, token, expiresInSec = 300) {
+  const key = `${registry}|${repo}`;
+  tokenCache.set(key, { token, expiresAt: Date.now() + expiresInSec * 1000 });
+  log(`tokenCache → 缓存 ${key} (${expiresInSec}s)`);
 }
 
 // 更新结果缓存: 6 小时，key = "registry/repo:tag"
@@ -152,33 +154,115 @@ async function getLocalRepoDigests(imageName) {
   } catch (e) { logError(`getLocalRepoDigests → ${e.message}`); return []; }
 }
 
-// Docker Hub token（带缓存）
-function getDockerHubToken(repo) {
-  // 先查缓存
-  const cached = getCachedToken(repo);
-  if (cached) return Promise.resolve(cached);
+// ==================== OAuth2 Token 获取（通用，支持所有 Registry） ====================
 
+// 解析 WWW-Authenticate 头 → { realm, service, scope }
+// 格式: Bearer realm="https://ghcr.io/token",service="ghcr.io",scope="repository:user/repo:pull"
+function parseWwwAuthenticate(header) {
+  if (!header) return null;
+  const result = {};
+  const bearMatch = header.match(/^\s*Bearer\s+(.+)/i);
+  if (!bearMatch) return null;
+  const params = bearMatch[1];
+  for (const m of params.matchAll(/(\w+)="([^"]*)"/g)) {
+    result[m[1]] = m[2];
+  }
+  return result.realm ? result : null;
+}
+
+// HTTP(S) GET 请求（用于获取 token 等简单场景）
+function httpsGet(url, timeout = 10000) {
+  log(`httpsGet → ${url}`);
   return new Promise((resolve, reject) => {
-    const url = `https://auth.docker.io/token?service=registry.docker.io&scope=repository:${repo}:pull`;
-    log(`getDockerHubToken → ${url}`);
-    const reqStart = Date.now();
-    const req = https.get(url, { timeout: 10000 }, (res) => {
+    const req = https.get(url, { timeout }, (res) => {
       let data = '';
       res.on('data', c => data += c);
       res.on('end', () => {
-        try {
-          const parsed = JSON.parse(data);
-          const token = parsed.token;
-          // 缓存 token，默认 5 分钟，用 expires_in 会更精确
-          setCachedToken(repo, token, parsed.expires_in || 300);
-          log(`getDockerHubToken → ok (${Date.now() - reqStart}ms)`);
-          resolve(token);
-        } catch { reject(new Error('Docker Hub token 解析失败')); }
+        try { resolve({ statusCode: res.statusCode, body: JSON.parse(data), headers: res.headers }); }
+        catch { resolve({ statusCode: res.statusCode, body: data, headers: res.headers }); }
       });
     });
-    req.on('error', e => reject(e));
-    req.on('timeout', () => { req.destroy(); reject(new Error('Docker Hub auth 超时')); });
+    req.on('error', reject);
+    req.on('timeout', () => { req.destroy(); reject(new Error('请求超时')); });
   });
+}
+
+// 通用 Registry Token 获取（自动跟随 WWW-Authenticate）
+// 流程: /v2/ → 401 + WWW-Authenticate → 请求 realm → token
+async function getRegistryToken(registry, repo) {
+  // 先查缓存
+  const cached = getCachedToken(registry, repo);
+  if (cached) return cached;
+
+  const host = registry === 'registry-1.docker.io' ? 'registry-1.docker.io' : registry;
+  const registryLabel = registry === 'registry-1.docker.io' ? 'Docker Hub' : registry;
+  log(`getRegistryToken → ${registryLabel} repo=${repo}`);
+
+  // 1. 请求 /v2/ 获取 WWW-Authenticate 信息
+  let wwwAuth;
+  try {
+    const v2Res = await new Promise((resolve) => {
+      const req = https.request({
+        hostname: host, path: '/v2/', method: 'GET',
+        headers: { 'Accept': 'application/json' },
+        timeout: 10000, rejectUnauthorized: true,
+      }, (res) => {
+        resolve({ statusCode: res.statusCode, headers: res.headers });
+      });
+      req.on('error', (e) => { logError(`getRegistryToken → /v2/ 请求失败: ${e.message}`); resolve({ statusCode: 0, headers: {} }); });
+      req.on('timeout', () => { req.destroy(); resolve({ statusCode: 0, headers: {} }); });
+      req.end();
+    });
+
+    if (v2Res.statusCode === 200) {
+      // Registry 不需要认证
+      log(`getRegistryToken → ${registryLabel} 无需认证`);
+      return null;
+    }
+
+    wwwAuth = v2Res.headers['www-authenticate'];
+    if (!wwwAuth) {
+      logError(`getRegistryToken → ${registryLabel} 返回 ${v2Res.statusCode} 但无 WWW-Authenticate 头`);
+      return null;
+    }
+  } catch (e) {
+    logError(`getRegistryToken → ${registryLabel} 连接失败: ${e.message}`);
+    return null;
+  }
+
+  // 2. 解析 WWW-Authenticate
+  const authInfo = parseWwwAuthenticate(wwwAuth);
+  if (!authInfo) {
+    logError(`getRegistryToken → 无法解析 WWW-Authenticate: ${wwwAuth}`);
+    return null;
+  }
+  log(`getRegistryToken → realm=${authInfo.realm}, service=${authInfo.service || 'N/A'}`);
+
+  // 3. 请求 token
+  try {
+    const scope = `repository:${repo}:pull`;
+    const params = new URLSearchParams();
+    if (authInfo.service) params.set('service', authInfo.service);
+    params.set('scope', scope);
+    // 去掉 realm URL 已有的 query 参数（如有），追加我们的参数
+    const realmBase = authInfo.realm.split('?')[0];
+    const tokenUrl = `${realmBase}?${params.toString()}`;
+
+    const tokenRes = await httpsGet(tokenUrl, 10000);
+    if (tokenRes.statusCode !== 200 || !tokenRes.body?.token) {
+      logError(`getRegistryToken → realm 返回 ${tokenRes.statusCode}, 无 token`);
+      return null;
+    }
+
+    const token = tokenRes.body.token;
+    const expiresIn = tokenRes.body.expires_in || 300;
+    setCachedToken(registry, repo, token, expiresIn);
+    log(`getRegistryToken → ${registryLabel} 获取成功 (${expiresIn}s)`);
+    return token;
+  } catch (e) {
+    logError(`getRegistryToken → realm 请求失败: ${e.message}`);
+    return null;
+  }
 }
 
 // 请求 Registry Manifest → 返回 { statusCode, digest, error }
@@ -256,18 +340,14 @@ async function checkContainerUpdate(containerId) {
   }
   const localDigest = localRepoDigests[0]?.split('@')[1] || null;
 
-  // 6. 远端 manifest
+  // 6. 远端 manifest（通用 OAuth2 token 流程，支持 Docker Hub / GHCR / 自建 Registry）
   let remoteResult;
-  if (parsed.registry === 'registry-1.docker.io') {
-    try {
-      const token = await getDockerHubToken(parsed.repo);
-      remoteResult = await fetchRegistryManifest(parsed.registry, parsed.repo, parsed.tag, token);
-    } catch (e) {
-      logError(`checkContainerUpdate → Docker Hub 连接失败: ${e.message}`);
-      return { imageName, containerName, status: 'network_error', hasUpdate: false, currentDigest: localDigest, error: `无法连接 Docker Hub: ${e.message}` };
-    }
-  } else {
-    remoteResult = await fetchRegistryManifest(parsed.registry, parsed.repo, parsed.tag, null);
+  try {
+    const token = await getRegistryToken(parsed.registry, parsed.repo);
+    remoteResult = await fetchRegistryManifest(parsed.registry, parsed.repo, parsed.tag, token);
+  } catch (e) {
+    logError(`checkContainerUpdate → Registry 连接失败: ${e.message}`);
+    return { imageName, containerName, status: 'network_error', hasUpdate: false, currentDigest: localDigest, error: `无法连接 Registry: ${e.message}` };
   }
 
   // 7. 处理结果
