@@ -710,4 +710,119 @@ async function handleCreateStream(req, res) {
   res.end();
 }
 
-module.exports = { router, handleWsCompose, composeProcesses, handleCreateStream };
+/**
+ * POST /projects/:name/action-stream — 流式执行 compose 操作（up/pull/restart/rebuild）
+ */
+async function handleActionStream(req, res) {
+  const projectName = req.params.name;
+  const { action } = req.body;
+  const streamActions = ['up', 'pull', 'restart', 'rebuild'];
+  if (!streamActions.includes(action)) {
+    return res.status(400).json({ error: `不支持的操作: ${action}` });
+  }
+
+  // 自我保护
+  const dangerousOps = ['restart', 'rebuild'];
+  if (dangerousOps.includes(action) && await isSelfComposeProject(projectName)) {
+    return res.status(403).json({ error: '不允许操作自身所在项目' });
+  }
+
+  const projectDir = safePath(projectName);
+  if (!await exists(projectDir)) {
+    return res.status(404).json({ error: '项目不存在' });
+  }
+
+  const composeFile = findComposeFile(projectDir);
+  if (!composeFile) {
+    return res.status(404).json({ error: '找不到 compose 文件' });
+  }
+
+  res.writeHead(200, {
+    'Content-Type': 'application/x-ndjson',
+    'Transfer-Encoding': 'chunked',
+    'Cache-Control': 'no-cache',
+    'X-Content-Type-Options': 'nosniff',
+  });
+
+  const send = (data) => {
+    if (res.writableEnded) return;
+    res.write(JSON.stringify(data) + '\n');
+  };
+
+  try {
+    let args;
+    if (action === 'up') {
+      args = ['up', '-d', '--remove-orphans'];
+    } else if (action === 'pull') {
+      args = ['pull'];
+    } else if (action === 'restart') {
+      args = ['restart'];
+    } else if (action === 'rebuild') {
+      send({ type: 'progress', percent: 10, message: '正在停止服务...' });
+      const downResult = await runCompose(projectDir, ['down']);
+      send({ type: 'progress', percent: 30, message: '正在重建...' });
+      args = ['up', '-d', '--build', '--force-recreate', '--remove-orphans'];
+    }
+
+    send({ type: 'progress', percent: action === 'rebuild' ? 30 : 10, message: `正在执行: docker compose ${args.join(' ')}` });
+
+    const proc = spawn('docker', [
+      'compose', '-f', composeFile, ...args,
+    ], {
+      cwd: projectDir,
+      env: { ...process.env, COMPOSE_PROJECT_NAME: projectName.toLowerCase() },
+    });
+
+    let stderrRaw = '';
+
+    proc.stdout.on('data', (d) => {
+      const text = d.toString();
+      text.trim().split('\n').filter(Boolean).forEach(line => {
+        send({ type: 'log', stream: 'stdout', message: line });
+      });
+    });
+
+    proc.stderr.on('data', (d) => {
+      const text = d.toString();
+      stderrRaw += text;
+      text.trim().split('\n').filter(Boolean).forEach(line => {
+        send({ type: 'log', stream: 'stderr', message: line });
+      });
+    });
+
+    await new Promise((resolve, reject) => {
+      proc.on('close', (code) => {
+        if (code === 0) resolve();
+        else {
+          const stderr = extractComposeError(stderrRaw);
+          reject(new Error(stderr || `compose 退出码 ${code}`));
+        }
+      });
+      proc.on('error', reject);
+      setTimeout(() => { proc.kill(); reject(new Error('命令执行超时')); }, 300000);
+    });
+
+    // 验证（仅 up/restart/rebuild 需要）
+    if (['up', 'restart', 'rebuild'].includes(action)) {
+      send({ type: 'progress', percent: 80, message: '正在验证服务...' });
+      const failed = await verifyServicesRunning(projectDir);
+      if (failed) {
+        send({ type: 'log', stream: 'stderr', message: `⚠️ ${failed}` });
+        await runCompose(projectDir, ['down']);
+        send({ type: 'all-error', message: failed });
+      } else {
+        send({ type: 'progress', percent: 100, message: '操作完成' });
+        send({ type: 'all-done', action });
+      }
+    } else {
+      send({ type: 'progress', percent: 100, message: '拉取完成' });
+      send({ type: 'all-done', action });
+    }
+  } catch (e) {
+    send({ type: 'all-error', message: e.message });
+  }
+
+  res.end();
+}
+
+module.exports = { router, handleWsCompose, composeProcesses, handleCreateStream, handleActionStream };

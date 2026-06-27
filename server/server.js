@@ -391,6 +391,7 @@ app.use('/docker', (req, res) => {
 // ==================== 业务路由（需认证） ====================
 app.use('/projects', composeModule.router);
 app.post('/projects/create-stream', composeModule.handleCreateStream);
+app.post('/projects/:name/action-stream', composeModule.handleActionStream);
 app.use('/exec', execRoutes.router);
 app.use('/files', filesRoutes);
 app.use('/api/templates', templatesRoutes);

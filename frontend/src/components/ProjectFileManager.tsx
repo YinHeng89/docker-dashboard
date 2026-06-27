@@ -1,6 +1,6 @@
 import { useState, useEffect, useCallback, useRef } from 'react'
 import { useTranslation } from 'react-i18next'
-import { FileText, Save, RefreshCw, Play, Square, Loader2, Upload, Search, XCircle, X, Check } from 'lucide-react'
+import { FileText, Save, RefreshCw, Play, Square, Loader2, Upload, Search, XCircle, X, Check, Terminal, ChevronDown, ChevronUp } from 'lucide-react'
 import YamlEditor from './YamlEditor'
 import FileTree from './FileTree'
 import EditorTabs from './EditorTabs'
@@ -65,6 +65,19 @@ export default function ProjectFileManager({
   const [searchResults, setSearchResults] = useState<{ file: string; line: number; content: string }[]>([])
   const [searching, setSearching] = useState(false)
   const [showSearch, setShowSearch] = useState(false)
+
+  // --- Compose action stream ---
+  const [streamAction, setStreamAction] = useState<string | null>(null)
+  const [actionProgress, setActionProgress] = useState(0)
+  const [actionLogs, setActionLogs] = useState<{ stream: string; message: string }[]>([])
+  const [showActionLogs, setShowActionLogs] = useState(false)
+  const actionLogEndRef = useRef<HTMLDivElement>(null)
+
+  useEffect(() => {
+    if (showActionLogs && actionLogEndRef.current) {
+      actionLogEndRef.current.scrollIntoView({ behavior: 'smooth' })
+    }
+  }, [actionLogs, showActionLogs])
 
   const showToast = useCallback((msg: string, type: 'success' | 'error' = 'success') => {
     setToast({ msg, type })
@@ -351,6 +364,58 @@ export default function ProjectFileManager({
     return () => document.removeEventListener('keydown', onKeyDown)
   }, [currentEditingPath, saveFile, renameTarget])
 
+  // ==================== Stream Compose Actions ====================
+
+  const handleStreamAction = useCallback(async (action: string) => {
+    setStreamAction(action)
+    setActionProgress(0)
+    setActionLogs([])
+    setShowActionLogs(false)
+    try {
+      const resp = await fetch(`${API_BASE}/projects/${projectName}/action-stream`, {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ action }),
+      })
+      if (!resp.ok) {
+        const data = await resp.json().catch(() => ({}))
+        showToast(data.error || '操作失败', 'error')
+        return
+      }
+      const reader = resp.body?.getReader()
+      if (!reader) return
+      const decoder = new TextDecoder()
+      let buffer = ''
+      while (true) {
+        const { done, value } = await reader.read()
+        if (done) break
+        buffer += decoder.decode(value, { stream: true })
+        const lines = buffer.split('\n')
+        buffer = lines.pop() || ''
+        for (const line of lines) {
+          if (!line.trim()) continue
+          try {
+            const msg = JSON.parse(line)
+            if (msg.type === 'progress') {
+              setActionProgress(msg.percent || 0)
+            } else if (msg.type === 'log') {
+              setActionLogs(prev => [...prev.slice(-200), msg])
+            } else if (msg.type === 'all-done') {
+              setActionProgress(100)
+              showToast('操作完成')
+              setTimeout(() => setStreamAction(null), 1500)
+            } else if (msg.type === 'all-error') {
+              showToast(msg.message || '操作失败', 'error')
+            }
+          } catch { /* skip */ }
+        }
+      }
+    } catch (e: any) {
+      showToast(e.message || '操作失败', 'error')
+      setStreamAction(null)
+    }
+  }, [projectName, showToast])
+
   // ==================== Derived ====================
 
   const hasChanges = fileContent !== originalContent
@@ -405,21 +470,21 @@ export default function ProjectFileManager({
             {/* Compose actions */}
             {onComposeAction && (
               <>
-                <button onClick={() => onComposeAction('up')} disabled={composeActionLoading === 'up'}
+                <button onClick={() => handleStreamAction('up')} disabled={streamAction === 'up'}
                   className="flex items-center gap-1 px-2 py-1 text-xs bg-accent/10 text-accent hover:bg-accent/20 rounded transition-colors disabled:opacity-50"
-                >{composeActionLoading === 'up' ? <Loader2 className="w-3 h-3 animate-spin" /> : <Play className="w-3 h-3" />}{t('compose.up')}</button>
+                >{streamAction === 'up' ? <Loader2 className="w-3 h-3 animate-spin" /> : <Play className="w-3 h-3" />}{t('compose.up')}</button>
                 <button onClick={() => onComposeAction('down')} disabled={composeActionLoading === 'down'}
                   className="flex items-center gap-1 px-2 py-1 text-xs border border-border text-warning hover:bg-warning/10 rounded transition-colors disabled:opacity-50"
                 >{composeActionLoading === 'down' ? <Loader2 className="w-3 h-3 animate-spin" /> : <Square className="w-3 h-3" />}{t('compose.down')}</button>
-                <button onClick={() => onComposeAction('restart')} disabled={composeActionLoading === 'restart'}
+                <button onClick={() => handleStreamAction('restart')} disabled={streamAction === 'restart'}
                   className="flex items-center gap-1 px-2 py-1 text-xs border border-border hover:bg-border/20 rounded transition-colors disabled:opacity-50"
-                >{composeActionLoading === 'restart' ? <Loader2 className="w-3 h-3 animate-spin" /> : <RefreshCw className="w-3 h-3" />}{t('compose.restart')}</button>
-                <button onClick={() => onComposeAction('pull')} disabled={composeActionLoading === 'pull'}
+                >{streamAction === 'restart' ? <Loader2 className="w-3 h-3 animate-spin" /> : <RefreshCw className="w-3 h-3" />}{t('compose.restart')}</button>
+                <button onClick={() => handleStreamAction('pull')} disabled={streamAction === 'pull'}
                   className="flex items-center gap-1 px-2 py-1 text-xs border border-border hover:bg-border/20 rounded transition-colors disabled:opacity-50"
-                >{composeActionLoading === 'pull' ? <Loader2 className="w-3 h-3 animate-spin" /> : <Upload className="w-3 h-3" />}{t('compose.pull')}</button>
-                <button onClick={() => onComposeAction('rebuild')} disabled={composeActionLoading === 'rebuild'}
+                >{streamAction === 'pull' ? <Loader2 className="w-3 h-3 animate-spin" /> : <Upload className="w-3 h-3" />}{t('compose.pull')}</button>
+                <button onClick={() => handleStreamAction('rebuild')} disabled={streamAction === 'rebuild'}
                   className="flex items-center gap-1 px-2 py-1 text-xs border border-border hover:bg-border/20 rounded transition-colors disabled:opacity-50"
-                >{composeActionLoading === 'rebuild' ? <Loader2 className="w-3 h-3 animate-spin" /> : <RefreshCw className="w-3 h-3" />}{t('compose.rebuild')}</button>
+                >{streamAction === 'rebuild' ? <Loader2 className="w-3 h-3 animate-spin" /> : <RefreshCw className="w-3 h-3" />}{t('compose.rebuild')}</button>
               </>
             )}
           </div>
@@ -445,6 +510,57 @@ export default function ProjectFileManager({
               <span className="text-textMuted truncate">- {r.content}</span>
             </div>
           ))}
+        </div>
+      )}
+
+      {/* Compose Action 进度条 + 日志 */}
+      {streamAction && (
+        <div className="px-4 py-2 border-b border-border bg-surface shrink-0 space-y-1.5">
+          <div className="space-y-1">
+            <div className="flex items-center justify-between text-xs">
+              <span className="text-textSecondary">
+                {streamAction === 'up' ? '正在启动服务...'
+                  : streamAction === 'pull' ? '正在拉取镜像...'
+                  : streamAction === 'restart' ? '正在重启服务...'
+                  : '正在重建...'}
+              </span>
+              <span className="text-textMuted font-mono">{actionProgress}%</span>
+            </div>
+            <div className="h-2 bg-panel rounded-full overflow-hidden">
+              <div
+                className={`h-full rounded-full transition-all duration-500 ${
+                  actionProgress === 100
+                    ? 'bg-gradient-to-r from-running to-emerald-400'
+                    : 'bg-gradient-to-r from-accent to-blue-400'
+                }`}
+                style={{ width: `${actionProgress}%` }}
+              />
+            </div>
+          </div>
+          <button
+            onClick={() => setShowActionLogs(!showActionLogs)}
+            className="flex items-center gap-1 text-xs text-textMuted hover:text-textPrimary transition-colors"
+          >
+            <Terminal className="w-3 h-3" />
+            <span>日志输出</span>
+            {showActionLogs ? <ChevronUp className="w-3 h-3" /> : <ChevronDown className="w-3 h-3" />}
+          </button>
+          {showActionLogs && (
+            <div className="bg-black/90 text-green-400 rounded-lg p-3 text-xs font-mono h-32 overflow-y-auto">
+              {actionLogs.length === 0 ? (
+                <span className="text-textMuted">等待输出...</span>
+              ) : (
+                actionLogs.map((log, i) => (
+                  <div key={i} className={`leading-relaxed whitespace-pre-wrap break-all ${
+                    log.stream === 'stderr' ? 'text-red-400' : 'text-green-400'
+                  }`}>
+                    {log.message}
+                  </div>
+                ))
+              )}
+              <div ref={actionLogEndRef} />
+            </div>
+          )}
         </div>
       )}
 
