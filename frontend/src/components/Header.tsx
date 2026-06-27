@@ -1,5 +1,5 @@
 import { useState, useEffect } from 'react'
-import { Bell, Maximize2, ArrowUpCircle, Loader2 } from 'lucide-react'
+import { Bell, Maximize2, ArrowUpCircle, Loader2, X } from 'lucide-react'
 import { useTranslation } from 'react-i18next'
 import { useTheme } from '../hooks/useTheme'
 import LangToggle from './LangToggle'
@@ -10,7 +10,7 @@ import type { SystemMetrics } from '../types'
 interface HeaderProps {
   metrics: SystemMetrics | null
   activeNav: string
-  onNavChange?: (nav: string) => void
+  onNavChange?: (nav: string, highlightContainerId?: string) => void
 }
 
 const pageTitles: Record<string, { zh: string; en: string }> = {
@@ -147,12 +147,23 @@ export default function Header({ metrics: m, activeNav, onNavChange }: HeaderPro
                 <span className="text-sm font-semibold text-textPrimary">
                   {hasUpdates ? `发现 ${updateCount} 个更新` : '暂无更新'}
                 </span>
-                <button onClick={handleCheck} disabled={checking}
-                  className="flex items-center gap-1 px-2 py-1 text-xs text-accent hover:bg-accent/10 rounded transition-colors disabled:opacity-50"
-                >
-                  {checking ? <Loader2 className="w-3 h-3 animate-spin" /> : <ArrowUpCircle className="w-3 h-3" />}
-                  立即检测
-                </button>
+                <div className="flex items-center gap-1.5">
+                  {updateResults.length > 0 && (
+                    <button
+                      onClick={async () => { await fetch('/api/auto-update/clear', { method: 'POST' }); fetchUpdateStatus() }}
+                      className="flex items-center gap-1 px-2 py-1 text-xs text-textMuted hover:text-textPrimary hover:bg-border/20 rounded transition-colors"
+                    >
+                      <X className="w-3 h-3" />
+                      清除
+                    </button>
+                  )}
+                  <button onClick={handleCheck} disabled={checking}
+                    className="flex items-center gap-1 px-2 py-1 text-xs text-accent hover:bg-accent/10 rounded transition-colors disabled:opacity-50"
+                  >
+                    {checking ? <Loader2 className="w-3 h-3 animate-spin" /> : <ArrowUpCircle className="w-3 h-3" />}
+                    立即检测
+                  </button>
+                </div>
               </div>
               <div className="max-h-[300px] overflow-y-auto">
                 {updateResults.length === 0 ? (
@@ -161,7 +172,16 @@ export default function Header({ metrics: m, activeNav, onNavChange }: HeaderPro
                   </div>
                 ) : (
                   updateResults.map(r => (
-                    <div key={r.container_id} className="px-4 py-2.5 border-b border-border/30 hover:bg-border/10 transition-colors">
+                    <div
+                      key={r.container_id}
+                      className={`px-4 py-2.5 border-b border-border/30 hover:bg-border/10 transition-colors ${r.has_update === 1 ? 'cursor-pointer' : ''}`}
+                      onClick={() => {
+                        if (r.has_update === 1) {
+                          setShowDropdown(false)
+                          onNavChange?.('containers', r.container_id)
+                        }
+                      }}
+                    >
                       <div className="flex items-center justify-between">
                         <div className="min-w-0">
                           <div className="flex items-center gap-1.5">

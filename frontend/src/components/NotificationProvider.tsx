@@ -25,6 +25,7 @@ interface NotificationContextType {
   success: (title: string, message?: string) => void
   info: (title: string, message?: string) => void
   warning: (title: string, message?: string) => void
+  dismissAll: () => void
 }
 
 const NotificationContext = createContext<NotificationContextType | null>(null)
@@ -46,6 +47,9 @@ const actionIcons: Record<string, React.ElementType> = {
   start: Play, stop: Square, restart: RotateCw, remove: X,
   kill: XCircle, pause: Power, unpause: Play, create: Package,
 }
+
+// WebSocket 事件防抖：同一容器 + 同一 action 10秒内只通知一次
+const recentEvents = new Map<string, number>()
 
 export default function NotificationProvider({ children }: { children: React.ReactNode }) {
   const [notifications, setNotifications] = useState<Notification[]>([])
@@ -75,19 +79,42 @@ export default function NotificationProvider({ children }: { children: React.Rea
     }, 300)
   }, [])
 
+  const dismissAll = useCallback(() => {
+    // 标记所有通知为移除中
+    setNotifications(prev => prev.map(p => ({ ...p, removing: true })))
+    // 300ms 后清空
+    setTimeout(() => setNotifications([]), 300)
+  }, [])
+
   // 清理 timers
   useEffect(() => {
     const timers = timersRef.current
     return () => { timers.forEach(t => clearTimeout(t)) }
   }, [])
 
-  // WebSocket 实时事件通知
+  // WebSocket 实时事件通知（带防抖）
   useEffect(() => {
     const live = connectLive({
       onDockerEvent: (event: any) => {
         const ev = event as { Type?: string; Action?: string; Actor?: { ID?: string; Attributes?: Record<string, string> } }
         const attrs = ev?.Actor?.Attributes || {}
         const name = attrs.name || ev?.Actor?.ID?.slice(0, 12) || 'unknown'
+        const containerId = ev?.Actor?.ID || ''
+
+        // 防抖：同一容器 + 同一 action 10秒内不重复通知
+        const dedupKey = `${containerId}:${ev?.Action}`
+        const now = Date.now()
+        const lastTime = recentEvents.get(dedupKey)
+        if (lastTime && now - lastTime < 10000) return
+        recentEvents.set(dedupKey, now)
+
+        // 定期清理旧记录（超过60秒）
+        if (recentEvents.size > 100) {
+          const cutoff = now - 60000
+          for (const [k, t] of recentEvents) {
+            if (t < cutoff) recentEvents.delete(k)
+          }
+        }
 
         switch (ev?.Action) {
           case 'start':
@@ -120,6 +147,7 @@ export default function NotificationProvider({ children }: { children: React.Rea
     success: (t, m) => addNotification('success', t, m),
     info: (t, m) => addNotification('info', t, m),
     warning: (t, m) => addNotification('warning', t, m),
+    dismissAll,
   }
 
   return (
@@ -129,6 +157,18 @@ export default function NotificationProvider({ children }: { children: React.Rea
       {/* 通知容器 Portal — 右下角固定 */}
       {createPortal(
         <div className="fixed bottom-4 right-4 z-[10000] flex flex-col gap-2 w-[380px] max-w-[90vw] pointer-events-none">
+          {/* 清除全部按钮 — 仅在有通知时显示 */}
+          {notifications.length > 0 && (
+            <div className="pointer-events-auto flex justify-end">
+              <button
+                onClick={dismissAll}
+                className="flex items-center gap-1 px-2.5 py-1 text-xs text-textMuted bg-surface/90 border border-border/50 rounded-lg hover:text-textPrimary hover:border-border transition-colors backdrop-blur shadow-sm"
+              >
+                <X className="w-3 h-3" />
+                清除全部 ({notifications.length})
+              </button>
+            </div>
+          )}
           {notifications.map(n => {
             const cfg = typeConfig[n.type]
             const ActionIcon = n.action ? actionIcons[n.action] : null

@@ -402,6 +402,7 @@ app.use('/api/groups', groupsRoutes);
 app.get('/api/containers/check-updates', updateRoutes.handleCheckAllUpdates);
 app.get('/api/containers/:id/check-update', updateRoutes.handleCheckUpdate);
 app.post('/api/containers/:id/update', containerRoutes.handleUpdate);
+app.post('/api/containers/:id/update-stream', containerRoutes.handleUpdateStream);
 app.post('/api/update/stream', updateRoutes.handleUpdateStream);
 
 // ==================== 自动更新检测 ====================
@@ -415,6 +416,10 @@ app.post('/api/auto-update/check', async (req, res) => {
 app.put('/api/auto-update/settings', (req, res) => {
   const { enabled, intervalHours } = req.body;
   autoUpdate.updateSettings(!!enabled, intervalHours || 6);
+  res.json({ success: true });
+});
+app.post('/api/auto-update/clear', (req, res) => {
+  autoUpdate.clearResults();
   res.json({ success: true });
 });
 

@@ -34,7 +34,8 @@ export default function App() {
   const [sidebarMobileOpen, setSidebarMobileOpen] = useState(false)
 
   // 切换导航：持久化到 localStorage，刷新后保持在当前页面
-  const handleNavChange = (nav: string) => {
+  const [highlightContainerId, setHighlightContainerId] = useState<string | null>(null)
+  const handleNavChange = (nav: string, highlightContainerId?: string) => {
     // 旧的路由重定向到 settings
     if (nav === 'logs' || nav === 'monitor' || nav === 'users') {
       nav = 'settings'
@@ -43,6 +44,7 @@ export default function App() {
       refreshManagedProjects()
       refreshContainers()
     }
+    setHighlightContainerId(highlightContainerId || null)
     localStorage.setItem('activeNav', nav)
     setActiveNav(nav)
   }
@@ -118,6 +120,8 @@ export default function App() {
             favorites={favorites}
             showUngrouped={showUngrouped}
             groupsLoading={groupsLoading}
+            highlightContainerId={highlightContainerId}
+            onClearHighlight={() => setHighlightContainerId(null)}
             createGroup={createGroup}
             deleteGroup={deleteGroup}
             renameGroup={renameGroup}

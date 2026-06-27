@@ -1,4 +1,4 @@
-import { useState, useMemo, useEffect, useCallback } from 'react'
+import { useState, useMemo, useEffect, useCallback, useRef } from 'react'
 import { createPortal } from 'react-dom'
 import { useTranslation } from 'react-i18next'
 import {
@@ -6,7 +6,7 @@ import {
   Square, Trash2, ChevronDown, ChevronUp,
   AlertTriangle, CheckCircle2, XCircle, Pause, RefreshCw,
   Info, Loader2, Cpu, HardDrive, Clock, Tag, Skull,
-  ArrowUpCircle, ShieldCheck, Settings2,
+  ArrowUpCircle, ShieldCheck, Settings2, Terminal,
 } from 'lucide-react'
 import ProjectDetailModal from './ProjectDetailModal'
 import ServiceCard from '../components/ServiceCard'
@@ -21,7 +21,7 @@ import { useScrollAnchor } from '../hooks/useScrollAnchor'
 import {
   startContainer, stopContainer, restartContainer, removeContainer,
   pauseContainer, unpauseContainer, killContainer,
-  checkContainerUpdate, updateContainer,
+  checkContainerUpdate,
 } from '../api/docker'
 import type { ContainerDetailSummary, ContainerUpdateResult, Service } from '../types'
 import type { WorkspaceGroup } from '../types'
@@ -33,6 +33,8 @@ interface ContainerPageProps {
   favorites: string[]
   showUngrouped: boolean
   groupsLoading: boolean
+  highlightContainerId?: string | null
+  onClearHighlight?: () => void
   createGroup: (id: string, name: string) => Promise<boolean>
   deleteGroup: (id: string) => Promise<boolean>
   renameGroup: (id: string, name: string) => Promise<boolean>
@@ -60,6 +62,7 @@ function getStatusStyle(status: string): StatusStyle {
 
 export default function ContainerPage({
   groups, mappings, collapsed, favorites, showUngrouped, groupsLoading,
+  highlightContainerId, onClearHighlight,
   createGroup, deleteGroup, renameGroup, toggleShowOnDashboard, toggleShowUngrouped,
   assignToGroup, unassign, toggleFavorite, toggleCollapsed,
 }: ContainerPageProps) {
@@ -110,6 +113,27 @@ export default function ContainerPage({
   }, [containers])
   const [updatingContainer, setUpdatingContainer] = useState<string | null>(null)
   const [showUpdateConfirm, setShowUpdateConfirm] = useState<ContainerDetailSummary | null>(null)
+
+  // 流式更新状态
+  const [updateProgress, setUpdateProgress] = useState(0)
+  const [updateLogs, setUpdateLogs] = useState<{ stream: string; message: string }[]>([])
+  const [showUpdateLogs, setShowUpdateLogs] = useState(false)
+  const updateLogEndRef = useRef<HTMLDivElement>(null)
+  useEffect(() => {
+    if (showUpdateLogs && updateLogEndRef.current) {
+      updateLogEndRef.current.scrollIntoView({ behavior: 'smooth' })
+    }
+  }, [updateLogs, showUpdateLogs])
+
+  // 从铃铛跳转时自动打开更新弹窗
+  useEffect(() => {
+    if (!highlightContainerId || containers.length === 0) return
+    const target = containers.find(c => c.id === highlightContainerId)
+    if (target && updateResults[highlightContainerId]?.hasUpdate) {
+      setShowUpdateConfirm(target)
+      onClearHighlight?.()
+    }
+  }, [highlightContainerId, containers, updateResults, onClearHighlight])
 
   // 项目详情弹窗
   const [projectDetail, setProjectDetail] = useState<ContainerDetailSummary[] | null>(null)
@@ -255,15 +279,56 @@ export default function ContainerPage({
       return
     }
     setUpdatingContainer(c.id)
+    setUpdateProgress(0)
+    setUpdateLogs([])
+    setShowUpdateLogs(false)
     try {
-      await updateContainer(c.id)
-      success(t('containers.updateSuccess'))
-      setShowUpdateConfirm(null)
-      setUpdateResults(prev => { const n = { ...prev }; delete n[c.id]; return n })
-      setTimeout(refresh, 1500)
-    } catch {
-      error(t('containers.updateFailed'))
-    } finally {
+      const resp = await fetch(`/api/containers/${c.id}/update-stream`, {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+      })
+      if (!resp.ok) {
+        const data = await resp.json().catch(() => ({}))
+        error(data.error || t('containers.updateFailed'))
+        setUpdatingContainer(null)
+        return
+      }
+      const reader = resp.body?.getReader()
+      if (!reader) { setUpdatingContainer(null); return }
+      const decoder = new TextDecoder()
+      let buffer = ''
+      while (true) {
+        const { done, value } = await reader.read()
+        if (done) break
+        buffer += decoder.decode(value, { stream: true })
+        const lines = buffer.split('\n')
+        buffer = lines.pop() || ''
+        for (const line of lines) {
+          if (!line.trim()) continue
+          try {
+            const msg = JSON.parse(line)
+            if (msg.type === 'progress') {
+              setUpdateProgress(msg.percent || 0)
+            } else if (msg.type === 'log') {
+              setUpdateLogs(prev => [...prev.slice(-200), msg])
+            } else if (msg.type === 'all-done') {
+              setUpdateProgress(100)
+              success(t('containers.updateSuccess'))
+              setTimeout(() => {
+                setShowUpdateConfirm(null)
+                setUpdateResults(prev => { const n = { ...prev }; delete n[c.id]; return n })
+                setUpdatingContainer(null)
+                refresh()
+              }, 1000)
+            } else if (msg.type === 'all-error') {
+              error(msg.message || t('containers.updateFailed'))
+              setUpdatingContainer(null)
+            }
+          } catch { /* skip */ }
+        }
+      }
+    } catch (e: any) {
+      error(e.message || t('containers.updateFailed'))
       setUpdatingContainer(null)
     }
   }
@@ -708,6 +773,46 @@ export default function ContainerPage({
               <AlertTriangle className="w-3.5 h-3.5 text-warning shrink-0 mt-0.5" />
               {t('containers.updateConfirmDesc')}
             </p>
+
+            {/* 流式进度条 + 日志面板 */}
+            {(updateProgress > 0 || updatingContainer) && (
+              <div className="mb-4 space-y-2 border-t border-border pt-3">
+                <div className="space-y-1">
+                  <div className="flex items-center justify-between text-xs">
+                    <span className="text-textSecondary">
+                      {updateProgress < 50 ? '正在拉取镜像...' : updateProgress < 80 ? '正在重建容器...' : updateProgress < 100 ? '正在启动...' : '更新完成'}
+                    </span>
+                    <span className="text-textMuted font-mono">{updateProgress}%</span>
+                  </div>
+                  <div className="h-2 bg-panel rounded-full overflow-hidden">
+                    <div className={`h-full rounded-full transition-all duration-500 ${
+                      updateProgress === 100 ? 'bg-gradient-to-r from-running to-emerald-400' : 'bg-gradient-to-r from-accent to-blue-400'
+                    }`} style={{ width: `${updateProgress}%` }} />
+                  </div>
+                </div>
+                <button onClick={() => setShowUpdateLogs(!showUpdateLogs)}
+                  className="flex items-center gap-1 text-xs text-textMuted hover:text-textPrimary transition-colors">
+                  <Terminal className="w-3 h-3" />
+                  <span>日志输出</span>
+                  {showUpdateLogs ? <ChevronUp className="w-3 h-3" /> : <ChevronDown className="w-3 h-3" />}
+                </button>
+                {showUpdateLogs && (
+                  <div className="bg-black/90 text-green-400 rounded-lg p-3 text-xs font-mono h-32 overflow-y-auto">
+                    {updateLogs.length === 0 ? (
+                      <span className="text-textMuted">等待输出...</span>
+                    ) : (
+                      updateLogs.map((log, i) => (
+                        <div key={i} className={`leading-relaxed whitespace-pre-wrap break-all ${log.stream === 'stderr' ? 'text-red-400' : 'text-green-400'}`}>
+                          {log.message}
+                        </div>
+                      ))
+                    )}
+                    <div ref={updateLogEndRef} />
+                  </div>
+                )}
+              </div>
+            )}
+
             <div className="flex justify-end gap-2">
               <button onClick={() => setShowUpdateConfirm(null)}
                 className="action-btn action-btn-ghost text-xs px-3 py-1.5 rounded-lg">

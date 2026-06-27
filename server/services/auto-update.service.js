@@ -169,8 +169,13 @@ function getResults() {
   );
 }
 
+function clearResults() {
+  execute('DELETE FROM auto_update_results');
+  console.log('[AutoUpdate] 检测结果已清除');
+}
+
 function getSettings() {
   return { ...preferences };
 }
 
-module.exports = { init, updateSettings, getResults, getSettings, runCheck };
+module.exports = { init, updateSettings, getResults, getSettings, runCheck, clearResults };
