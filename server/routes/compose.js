@@ -603,4 +603,111 @@ router.post('/:name/restart', async (req, res, next) => {
   } catch (e) { next(e); }
 });
 
-module.exports = { router, handleWsCompose, composeProcesses };
+/**
+ * POST /projects/create-stream — 流式创建项目 + 启动
+ * NDJSON 响应，每次写入一行 JSON
+ */
+async function handleCreateStream(req, res) {
+  // 校验输入
+  let { name, content } = req.body;
+  if (!name || !/^[a-zA-Z0-9_-]+$/.test(name)) {
+    return res.status(400).json({ error: '项目名称只能包含字母、数字、下划线和短横线' });
+  }
+  name = name.toLowerCase();
+
+  const projectDir = safePath(name);
+  if (await exists(projectDir)) {
+    return res.status(409).json({ error: `项目 ${name} 已存在` });
+  }
+
+  // 校验 YAML
+  const { warnings } = validateYaml(content);
+  if (warnings.length > 0 && !isRelativePathSupported()) {
+    return res.status(400).json({
+      error: `检测到相对路径卷挂载，当前部署不支持。`,
+      warnings,
+    });
+  }
+
+  // NDJSON 响应头
+  res.writeHead(200, {
+    'Content-Type': 'application/x-ndjson',
+    'Transfer-Encoding': 'chunked',
+    'Cache-Control': 'no-cache',
+    'X-Content-Type-Options': 'nosniff',
+  });
+
+  const send = (data) => {
+    if (res.writableEnded) return;
+    res.write(JSON.stringify(data) + '\n');
+  };
+
+  try {
+    // Step 1: 创建目录和文件
+    send({ type: 'progress', percent: 20, message: '正在创建项目文件...' });
+    await ensureDir(projectDir);
+    await writeFile(path.join(projectDir, 'docker-compose.yml'), content);
+    send({ type: 'progress', percent: 40, message: '项目文件已创建' });
+
+    // Step 2: docker compose up -d
+    send({ type: 'progress', percent: 50, message: '正在启动服务...' });
+
+    const composeFile = path.join(projectDir, 'docker-compose.yml');
+    const proc = spawn('docker', [
+      'compose', '-f', composeFile, 'up', '-d', '--remove-orphans',
+    ], {
+      cwd: projectDir,
+      env: { ...process.env, COMPOSE_PROJECT_NAME: name },
+    });
+
+    let stdout = '', stderrRaw = '';
+
+    proc.stdout.on('data', (d) => {
+      const text = d.toString();
+      stdout += text;
+      text.trim().split('\n').filter(Boolean).forEach(line => {
+        send({ type: 'log', stream: 'stdout', message: line });
+      });
+    });
+
+    proc.stderr.on('data', (d) => {
+      const text = d.toString();
+      stderrRaw += text;
+      text.trim().split('\n').filter(Boolean).forEach(line => {
+        send({ type: 'log', stream: 'stderr', message: line });
+      });
+    });
+
+    await new Promise((resolve, reject) => {
+      proc.on('close', (code) => {
+        if (code === 0) {
+          send({ type: 'progress', percent: 80, message: '容器已启动，正在验证...' });
+          resolve();
+        } else {
+          const stderr = extractComposeError(stderrRaw);
+          send({ type: 'log', stream: 'stderr', message: stderr || `compose 退出码 ${code}` });
+          reject(new Error(stderr || `compose 启动失败 (code ${code})`));
+        }
+      });
+      proc.on('error', reject);
+      setTimeout(() => { proc.kill(); reject(new Error('命令执行超时')); }, 300000);
+    });
+
+    // Step 3: 验证服务
+    const failed = await verifyServicesRunning(projectDir);
+    if (failed) {
+      send({ type: 'log', stream: 'stderr', message: `⚠️ ${failed}` });
+      await runCompose(projectDir, ['down']);
+      send({ type: 'all-error', message: failed });
+    } else {
+      send({ type: 'progress', percent: 100, message: '启动完成' });
+      send({ type: 'all-done', name });
+    }
+  } catch (e) {
+    send({ type: 'all-error', message: e.message });
+  }
+
+  res.end();
+}
+
+module.exports = { router, handleWsCompose, composeProcesses, handleCreateStream };

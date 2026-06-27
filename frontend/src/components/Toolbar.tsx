@@ -1,7 +1,7 @@
-import { useState, useEffect } from 'react'
+import { useState, useEffect, useRef } from 'react'
 import { createPortal } from 'react-dom'
 import { useTranslation } from 'react-i18next'
-import { Search, Plus, Play, X, Upload, Loader2, LayoutTemplate, ChevronLeft, FileText } from 'lucide-react'
+import { Search, Plus, Play, X, Upload, Loader2, LayoutTemplate, ChevronLeft, FileText, ChevronDown, ChevronUp, Terminal } from 'lucide-react'
 import YamlEditor from './YamlEditor'
 
 interface Template {
@@ -26,6 +26,19 @@ export default function Toolbar({ searchQuery, onSearchChange, onProjectCreated,
   const [creating, setCreating] = useState(false)
   const [createError, setCreateError] = useState<string | null>(null)
   const [toast, setToast] = useState<{ msg: string; type: 'error' } | null>(null)
+
+  // 流式创建进度
+  const [streamProgress, setStreamProgress] = useState(0)
+  const [streamLogs, setStreamLogs] = useState<{ stream: string; message: string }[]>([])
+  const [showStreamLogs, setShowStreamLogs] = useState(false)
+  const logEndRef = useRef<HTMLDivElement>(null)
+
+  // 日志自动滚动
+  useEffect(() => {
+    if (showStreamLogs && logEndRef.current) {
+      logEndRef.current.scrollIntoView({ behavior: 'smooth' })
+    }
+  }, [streamLogs, showStreamLogs])
   useEffect(() => {
     if (!toast) return
     const timer = setTimeout(() => setToast(null), 5000)
@@ -79,33 +92,86 @@ export default function Toolbar({ searchQuery, onSearchChange, onProjectCreated,
     }
     setCreating(true)
     setCreateError(null)
+
+    // 仅创建：使用原 API
+    if (!start) {
+      try {
+        const resp = await fetch('/projects', {
+          method: 'POST',
+          headers: { 'Content-Type': 'application/json' },
+          body: JSON.stringify({ name: projectName.trim(), content: composeContent, start: false }),
+        })
+        const data = await resp.json()
+        if (!resp.ok) {
+          const msg = data.warnings?.length ? data.warnings.join('\n') : (data.error || '创建失败')
+          setToast({ msg, type: 'error' })
+          setCreating(false)
+          return
+        }
+        onProjectCreated?.()
+        setCreateOpen(false)
+        setProjectName('')
+        setComposeContent('')
+        setSelectedTemplate(null)
+        setShowTemplateSelect(false)
+      } catch (e: any) { setCreateError(e.message) }
+      finally { setCreating(false) }
+      return
+    }
+
+    // 创建并启动：使用流式 API
+    setStreamProgress(0)
+    setStreamLogs([])
+    setShowStreamLogs(true)
     try {
-      const resp = await fetch('/projects', {
+      const resp = await fetch('/projects/create-stream', {
         method: 'POST',
         headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify({ name: projectName.trim(), content: composeContent, start }),
+        body: JSON.stringify({ name: projectName.trim(), content: composeContent }),
       })
-      const data = await resp.json()
       if (!resp.ok) {
-        const msg = data.warnings?.length ? data.warnings.join('\n') : (data.error || '创建失败')
-        setToast({ msg, type: 'error' })
+        const data = await resp.json().catch(() => ({}))
+        setToast({ msg: data.error || '创建失败', type: 'error' })
         setCreating(false)
         return
       }
-      if (data.composeError) {
-        setToast({ msg: data.composeError, type: 'error' })
+      // 读取 NDJSON 流
+      const reader = resp.body?.getReader()
+      if (!reader) { setCreating(false); return }
+      const decoder = new TextDecoder()
+      let buffer = ''
+      while (true) {
+        const { done, value } = await reader.read()
+        if (done) break
+        buffer += decoder.decode(value, { stream: true })
+        const lines = buffer.split('\n')
+        buffer = lines.pop() || ''
+        for (const line of lines) {
+          if (!line.trim()) continue
+          try {
+            const msg = JSON.parse(line)
+            if (msg.type === 'progress') {
+              setStreamProgress(msg.percent || 0)
+            } else if (msg.type === 'log') {
+              setStreamLogs(prev => [...prev.slice(-200), msg])
+            } else if (msg.type === 'all-done') {
+              onProjectCreated?.()
+              setStreamProgress(100)
+              setTimeout(() => {
+                setCreateOpen(false)
+                setProjectName('')
+                setComposeContent('')
+                setSelectedTemplate(null)
+                setShowTemplateSelect(false)
+              }, 800)
+            } else if (msg.type === 'all-error') {
+              setCreateError(msg.message || '启动失败')
+            }
+          } catch { /* skip invalid JSON */ }
+        }
       }
-      onProjectCreated?.()
-      setCreateOpen(false)
-      setProjectName('')
-      setComposeContent('')
-      setSelectedTemplate(null)
-      setShowTemplateSelect(false)
-    } catch (e: any) {
-      setCreateError(e.message)
-    } finally {
-      setCreating(false)
-    }
+    } catch (e: any) { setCreateError(e.message) }
+    finally { setCreating(false) }
   }
 
   const resetCreateModal = () => {
@@ -115,6 +181,9 @@ export default function Toolbar({ searchQuery, onSearchChange, onProjectCreated,
     setSelectedTemplate(null)
     setShowTemplateSelect(false)
     setCreateError(null)
+    setStreamProgress(0)
+    setStreamLogs([])
+    setShowStreamLogs(false)
   }
 
   return (
@@ -230,7 +299,7 @@ export default function Toolbar({ searchQuery, onSearchChange, onProjectCreated,
                   />
                 </div>
 
-                <div className="flex-1 min-h-0 flex flex-col">
+                <div className={`${streamProgress > 0 || creating ? '' : 'flex-1'} min-h-0 flex flex-col`}>
                   <label className="block text-sm font-medium text-textPrimary mb-1 shrink-0">{t('toolbar.composeFile')}</label>
                   <YamlEditor
                     value={composeContent}
@@ -241,7 +310,7 @@ export default function Toolbar({ searchQuery, onSearchChange, onProjectCreated,
     ports:
       - "8080:80"
     restart: unless-stopped`}
-                    rows={14}
+                    rows={streamProgress > 0 || creating ? 6 : 14}
                   />
                 </div>
 
@@ -253,6 +322,65 @@ export default function Toolbar({ searchQuery, onSearchChange, onProjectCreated,
                   提示：项目将创建在 <code className="text-accent bg-accent/10 px-1 rounded">/projects/{projectName || '...'}</code> 目录下。
                   「创建并启动」会自动执行 <code className="text-accent bg-accent/10 px-1 rounded">docker compose up -d</code>。
                 </div>
+              </div>
+            )}
+
+            {/* 流式进度条 + 日志 — 固定在滚动区域外、底部按钮上方 */}
+            {!showTemplateSelect && (streamProgress > 0 || creating) && (
+              <div className="px-4 py-3 border-t border-border shrink-0 space-y-2">
+                {/* 进度条 — 始终显示 */}
+                <div className="space-y-1">
+                  <div className="flex items-center justify-between text-xs">
+                    <span className="text-textSecondary">
+                      {streamProgress < 50
+                        ? '正在创建项目...'
+                        : streamProgress < 80
+                        ? '正在启动服务...'
+                        : streamProgress < 100
+                        ? '正在验证服务...'
+                        : '创建完成'}
+                    </span>
+                    <span className="text-textMuted font-mono">{streamProgress}%</span>
+                  </div>
+                  <div className="h-2 bg-panel rounded-full overflow-hidden">
+                    <div
+                      className={`h-full rounded-full transition-all duration-500 ${
+                        streamProgress === 100
+                          ? 'bg-gradient-to-r from-running to-emerald-400'
+                          : 'bg-gradient-to-r from-accent to-blue-400'
+                      }`}
+                      style={{ width: `${streamProgress}%` }}
+                    />
+                  </div>
+                </div>
+
+                {/* 日志切换 */}
+                <button
+                  onClick={() => setShowStreamLogs(!showStreamLogs)}
+                  className="flex items-center gap-1 text-xs text-textMuted hover:text-textPrimary transition-colors"
+                >
+                  <Terminal className="w-3 h-3" />
+                  <span>日志输出</span>
+                  {showStreamLogs ? <ChevronUp className="w-3 h-3" /> : <ChevronDown className="w-3 h-3" />}
+                </button>
+
+                {/* 日志内容 */}
+                {showStreamLogs && (
+                  <div className="bg-black/90 text-green-400 rounded-lg p-3 text-xs font-mono h-32 overflow-y-auto">
+                    {streamLogs.length === 0 ? (
+                      <span className="text-textMuted">等待输出...</span>
+                    ) : (
+                      streamLogs.map((log, i) => (
+                        <div key={i} className={`leading-relaxed whitespace-pre-wrap break-all ${
+                          log.stream === 'stderr' ? 'text-red-400' : 'text-green-400'
+                        }`}>
+                          {log.message}
+                        </div>
+                      ))
+                    )}
+                    <div ref={logEndRef} />
+                  </div>
+                )}
               </div>
             )}
 

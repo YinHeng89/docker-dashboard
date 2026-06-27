@@ -1,4 +1,4 @@
-import { useState, useEffect, useRef } from 'react'
+import { useState, useEffect } from 'react'
 import { useTranslation } from 'react-i18next'
 import { AlertTriangle, XCircle, X } from 'lucide-react'
 import type { Alert } from '../types'
@@ -9,22 +9,29 @@ interface AlertPanelProps {
 
 export default function AlertPanel({ alerts }: AlertPanelProps) {
   const { t } = useTranslation()
+  const DISMISS_KEY = 'alert_dismissed_ids'
   const [dismissed, setDismissed] = useState(false)
-  const prevIdsRef = useRef<string[]>([])
 
-  // 检测是否有新的告警（告警 ID 集合变化），如果有则自动重新显示
+  // 从 localStorage 恢复关闭状态，并检测新告警
   useEffect(() => {
     const currentIds = alerts.map(a => a.id).sort()
-    const prevIds = prevIdsRef.current
-    // 有新告警出现 → 显示
-    const hasNew = currentIds.some(id => !prevIds.includes(id))
-    // 告警数增加 → 显示
-    const countIncreased = currentIds.length > prevIds.length
-    if (hasNew || countIncreased) {
+    if (currentIds.length === 0) return
+    try {
+      const stored = JSON.parse(localStorage.getItem(DISMISS_KEY) || '[]') as string[]
+      // 如果当前告警中有任意一个不在已关闭列表中 → 重新显示
+      const hasNew = currentIds.some(id => !stored.includes(id))
+      setDismissed(!hasNew)
+    } catch {
       setDismissed(false)
     }
-    prevIdsRef.current = currentIds
   }, [alerts])
+
+  // 关闭时持久化当前告警 ID
+  const handleDismiss = () => {
+    const currentIds = alerts.map(a => a.id)
+    localStorage.setItem(DISMISS_KEY, JSON.stringify(currentIds))
+    setDismissed(true)
+  }
 
   if (alerts.length === 0 || dismissed) return null
 
@@ -40,7 +47,7 @@ export default function AlertPanel({ alerts }: AlertPanelProps) {
           </span>
         </div>
         <button
-          onClick={() => setDismissed(true)}
+          onClick={handleDismiss}
           className="p-1 rounded hover:bg-border/50 text-textMuted hover:text-textPrimary transition-colors shrink-0"
           title="关闭"
         >
