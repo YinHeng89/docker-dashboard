@@ -317,7 +317,8 @@ router.put('/:name', async (req, res, next) => {
   }
 });
 
-// DELETE /projects/:name — 删除项目（仅 down -v，不删文件）
+// DELETE /projects/:name — 删除项目
+// 查询参数: ?removeFiles=true 同时删除项目文件
 router.delete('/:name', async (req, res, next) => {
   try {
     const projectDir = safePath(req.params.name);
@@ -325,10 +326,73 @@ router.delete('/:name', async (req, res, next) => {
       return res.status(404).json({ error: '项目不存在' });
     }
 
-    // down -v 清理容器+网络+卷，保留 compose 文件
+    // down -v 清理容器+网络+卷
     const result = await runCompose(projectDir, ['down', '-v']);
 
+    // 可选：删除项目文件
+    if (req.query.removeFiles === 'true') {
+      await require('fs').promises.rm(projectDir, { recursive: true, force: true });
+    }
+
     res.json({ success: result.code === 0, ...result });
+  } catch (e) {
+    next(e);
+  }
+});
+
+// POST /projects/:name/rename — 重命名项目
+// body: { newName: string }
+router.post('/:name/rename', async (req, res, next) => {
+  try {
+    const { newName } = req.body;
+    if (!newName || !/^[a-zA-Z0-9_-]+$/.test(newName)) {
+      return res.status(400).json({ error: '新名称只能包含字母、数字、下划线和短横线' });
+    }
+
+    const lowerName = newName.toLowerCase();
+    const oldDir = safePath(req.params.name);
+    const newDir = safePath(lowerName);
+
+    if (!await exists(oldDir)) {
+      return res.status(404).json({ error: '项目不存在' });
+    }
+    if (await exists(newDir)) {
+      return res.status(409).json({ error: '目标项目名已存在' });
+    }
+
+    // 先停掉原项目
+    await runCompose(oldDir, ['down']);
+    // 重命名目录
+    await require('fs').promises.rename(oldDir, newDir);
+
+    res.json({ success: true, oldName: req.params.name, newName: lowerName });
+  } catch (e) {
+    next(e);
+  }
+});
+
+// POST /projects/:name/clone — 克隆项目
+// body: { newName: string }
+router.post('/:name/clone', async (req, res, next) => {
+  try {
+    const { newName } = req.body;
+    if (!newName || !/^[a-zA-Z0-9_-]+$/.test(newName)) {
+      return res.status(400).json({ error: '新名称只能包含字母、数字、下划线和短横线' });
+    }
+
+    const lowerName = newName.toLowerCase();
+    const srcDir = safePath(req.params.name);
+    const destDir = safePath(lowerName);
+
+    if (!await exists(srcDir)) {
+      return res.status(404).json({ error: '源项目不存在' });
+    }
+    if (await exists(destDir)) {
+      return res.status(409).json({ error: '目标项目名已存在' });
+    }
+
+    await require('fs').promises.cp(srcDir, destDir, { recursive: true });
+    res.json({ success: true, name: lowerName, source: req.params.name });
   } catch (e) {
     next(e);
   }

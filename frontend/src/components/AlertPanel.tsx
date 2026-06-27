@@ -1,21 +1,36 @@
+import { useState, useEffect, useRef } from 'react'
 import { useTranslation } from 'react-i18next'
-import { AlertTriangle, XCircle, Wrench, RotateCw } from 'lucide-react'
+import { AlertTriangle, XCircle, X } from 'lucide-react'
 import type { Alert } from '../types'
 
 interface AlertPanelProps {
   alerts: Alert[]
-  onFixAll: () => Promise<void>
-  onRestartAll: () => Promise<void>
 }
 
-export default function AlertPanel({ alerts, onFixAll, onRestartAll }: AlertPanelProps) {
+export default function AlertPanel({ alerts }: AlertPanelProps) {
   const { t } = useTranslation()
+  const [dismissed, setDismissed] = useState(false)
+  const prevIdsRef = useRef<string[]>([])
 
-  if (alerts.length === 0) return null
+  // 检测是否有新的告警（告警 ID 集合变化），如果有则自动重新显示
+  useEffect(() => {
+    const currentIds = alerts.map(a => a.id).sort()
+    const prevIds = prevIdsRef.current
+    // 有新告警出现 → 显示
+    const hasNew = currentIds.some(id => !prevIds.includes(id))
+    // 告警数增加 → 显示
+    const countIncreased = currentIds.length > prevIds.length
+    if (hasNew || countIncreased) {
+      setDismissed(false)
+    }
+    prevIdsRef.current = currentIds
+  }, [alerts])
+
+  if (alerts.length === 0 || dismissed) return null
 
   return (
     <div className="bg-error/5 border border-error/20 rounded-lg p-3">
-      {/* 标题 + 操作 */}
+      {/* 标题 */}
       <div className="flex items-center justify-between mb-2.5">
         <div className="flex items-center gap-2">
           <AlertTriangle className="w-4 h-4 text-error" />
@@ -24,16 +39,13 @@ export default function AlertPanel({ alerts, onFixAll, onRestartAll }: AlertPane
             {alerts.length}
           </span>
         </div>
-        <div className="flex items-center gap-2">
-          <button onClick={onFixAll} className="action-btn action-btn-danger flex items-center gap-1.5 !py-1 !text-xs">
-            <Wrench className="w-3 h-3" />
-            {t('alert.fixAll')}
-          </button>
-          <button onClick={onRestartAll} className="action-btn bg-error text-white hover:bg-error/80 flex items-center gap-1.5 !py-1 !text-xs">
-            <RotateCw className="w-3 h-3" />
-            {t('alert.restartAll')}
-          </button>
-        </div>
+        <button
+          onClick={() => setDismissed(true)}
+          className="p-1 rounded hover:bg-border/50 text-textMuted hover:text-textPrimary transition-colors shrink-0"
+          title="关闭"
+        >
+          <X className="w-4 h-4" />
+        </button>
       </div>
 
       {/* 告警列表 - 横排 */}

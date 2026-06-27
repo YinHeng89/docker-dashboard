@@ -26,9 +26,10 @@ const app = express();
 const server = http.createServer(app);
 
 // ==================== 中间件 ====================
-// /docker 代理路径跳过 JSON 解析，避免消费请求体导致 pipe 转发失败
+// /docker 代理路径 + /files/upload 跳过 JSON 解析
 app.use((req, res, next) => {
   if (req.path.startsWith('/docker')) return next();
+  if (req.path === '/files/upload' && req.method === 'POST') return next();
   express.json({ limit: '5mb' })(req, res, next);
 });
 app.use(express.urlencoded({ extended: true }));

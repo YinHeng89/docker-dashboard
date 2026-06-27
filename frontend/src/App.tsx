@@ -17,19 +17,14 @@ import VolumesPage from './pages/VolumesPage'
 import SettingsPage from './pages/SettingsPage'
 import PluginsPage from './pages/PluginsPage'
 import TrashPage from './pages/TrashPage'
-import { useNotifications } from './components/NotificationProvider'
 import { useContainers } from './hooks/useContainers'
 import { useContainersEnhanced } from './hooks/useContainersEnhanced'
 import { useGroups } from './hooks/useGroups'
 import { useSystemMetrics } from './hooks/useSystemMetrics'
-import { useSelf } from './hooks/useSelf'
 import { useScrollAnchor } from './hooks/useScrollAnchor'
-import { restartContainer } from './api/docker'
 import type { Service, Alert, ContainerGroup } from './types'
 
 export default function App() {
-  const { success } = useNotifications()
-  const { isSelf } = useSelf()
   const [activeNav, setActiveNav] = useState(() => {
     const saved = localStorage.getItem('activeNav')
     // 旧路由重定向到 settings
@@ -100,20 +95,6 @@ export default function App() {
   }, [workspaceGrouped, groups, showUngrouped])
 
   // ===== 容器操作 =====
-  const handleFixAll = async () => {
-    for (const a of alerts) {
-      if (isSelf(a.id)) continue // 跳过自身容器
-      try { await restartContainer(a.id); success('已触发重启', a.serviceName) } catch { /* skip */ }
-    }
-  }
-
-  const handleRestartAll = async () => {
-    for (const a of alerts) {
-      if (isSelf(a.id)) continue // 跳过自身容器
-      try { await restartContainer(a.id); success('已触发重启', a.serviceName) } catch { /* skip */ }
-    }
-    setTimeout(refreshContainers, 1000)
-  }
 
   return (
     <div className="h-screen flex overflow-hidden">
@@ -178,7 +159,7 @@ export default function App() {
             />
 
             {/* 异常告警 */}
-            <AlertPanel alerts={alerts} onFixAll={handleFixAll} onRestartAll={handleRestartAll} />
+            <AlertPanel alerts={alerts} />
 
             {/* 服务分组 — 工作区模式 */}
             <div>

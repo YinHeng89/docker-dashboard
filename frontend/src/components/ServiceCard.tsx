@@ -1,12 +1,13 @@
 import { useState, useEffect } from 'react'
 import { createPortal } from 'react-dom'
 import { useTranslation } from 'react-i18next'
-import { Terminal, ScrollText, RotateCw, RefreshCw, Play, Square, Trash2, Loader2, Pencil, FolderOpen, X, Save, FileText, ChevronLeft, ArrowUpCircle, Cpu, HardDrive, Clock } from 'lucide-react'
+import { Terminal, ScrollText, RotateCw, RefreshCw, Play, Square, Trash2, Loader2, Pencil, FolderOpen, X, Save, ArrowUpCircle, Cpu, HardDrive, Clock } from 'lucide-react'
 import type { Service } from '../types'
 import LogsModal from './LogsModal'
 import YamlEditor from './YamlEditor'
 import TerminalModal from './TerminalModal'
 import UpdateModal from './UpdateModal'
+import ProjectFileManager from './ProjectFileManager'
 import { useSelf } from '../hooks/useSelf'
 
 const statusDot: Record<string, string> = {
@@ -55,29 +56,6 @@ export default function ServiceCard({ service, managedProjects, onCardClick }: S
   const [editLoading, setEditLoading] = useState(false)
   const [editSaving, setEditSaving] = useState(false)
 
-  // 文件浏览器相关状态
-  const [fileEntries, setFileEntries] = useState<{ name: string; isDir: boolean }[]>([])
-  const [filesLoading, setFilesLoading] = useState(false)
-  const [selectedFile, setSelectedFile] = useState<string | null>(null)
-  const [fileContent, setFileContent] = useState('')
-  const [fileSaving, setFileSaving] = useState(false)
-
-  // ESC 关闭编辑弹窗
-  useEffect(() => {
-    if (!showEdit) return
-    const onKey = (e: KeyboardEvent) => { if (e.key === 'Escape') setShowEdit(false) }
-    document.addEventListener('keydown', onKey)
-    return () => document.removeEventListener('keydown', onKey)
-  }, [showEdit])
-
-  // ESC 关闭文件弹窗
-  useEffect(() => {
-    if (!showFiles) return
-    const onKey = (e: KeyboardEvent) => { if (e.key === 'Escape') setShowFiles(false) }
-    document.addEventListener('keydown', onKey)
-    return () => document.removeEventListener('keydown', onKey)
-  }, [showFiles])
-
   const dot = statusDot[service.status] ?? statusDot['stopped']!
   const sBorder = statusBorder[service.status] ?? statusBorder['stopped']!
   const sBadge = statusBadge[service.status] ?? statusBadge['stopped']!
@@ -89,6 +67,14 @@ export default function ServiceCard({ service, managedProjects, onCardClick }: S
     const timer = setTimeout(() => setToast(null), 3000)
     return () => clearTimeout(timer)
   }, [toast])
+
+  // ESC 关闭弹窗
+  useEffect(() => {
+    if (!showFiles && !showEdit) return
+    const onKey = (e: KeyboardEvent) => { if (e.key === 'Escape') { setShowFiles(false); setShowEdit(false) } }
+    document.addEventListener('keydown', onKey)
+    return () => document.removeEventListener('keydown', onKey)
+  }, [showFiles, showEdit])
 
   // 管理项目的统一操作（compose API）
   const doAction = async (action: string) => {
@@ -158,67 +144,6 @@ export default function ServiceCard({ service, managedProjects, onCardClick }: S
   }
 
   // 打开文件浏览器
-  const [filesSubPath, setFilesSubPath] = useState('')
-
-  const handleOpenFiles = async () => {
-    setShowFiles(true)
-    setFilesLoading(true)
-    setSelectedFile(null)
-    setFilesSubPath('')
-    await loadFilesDir('')
-  }
-
-  const loadFilesDir = async (subPath: string) => {
-    setFilesLoading(true)
-    try {
-      const pathQuery = subPath ? `${projectDirName}/${subPath}` : projectDirName
-      const res = await fetch(`/files?path=${pathQuery}`)
-      const data = await res.json()
-      setFileEntries(data.entries || [])
-      setFilesSubPath(subPath)
-    } catch { /* ignore */ }
-    finally { setFilesLoading(false) }
-  }
-
-  const handleReadFile = async (name: string) => {
-    // 从已有列表中判断是否为目录，目录直接进入
-    const entry = fileEntries.find(f => f.name === name)
-    if (entry?.isDir) {
-      const newPath = filesSubPath ? `${filesSubPath}/${name}` : name
-      await loadFilesDir(newPath)
-      return
-    }
-    // 文件：高亮并加载内容
-    setSelectedFile(name)
-    try {
-      const filePath = filesSubPath ? `${projectDirName}/${filesSubPath}/${name}` : `${projectDirName}/${name}`
-      const res = await fetch(`/files/${filePath}`)
-      const data = await res.json()
-      if (data.type === 'directory') {
-        // 兜底：服务端返回目录则进入
-        const newPath = filesSubPath ? `${filesSubPath}/${name}` : name
-        setSelectedFile(null)
-        await loadFilesDir(newPath)
-      } else {
-        setFileContent(data.content || '')
-      }
-    } catch { /* ignore */ }
-  }
-
-  const handleSaveFile = async () => {
-    if (!selectedFile) return
-    setFileSaving(true)
-    try {
-      const filePath = filesSubPath ? `${projectDirName}/${filesSubPath}/${selectedFile}` : `${projectDirName}/${selectedFile}`
-      await fetch(`/files/${filePath}`, {
-        method: 'PUT',
-        headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify({ content: fileContent }),
-      })
-    } catch { /* ignore */ }
-    finally { setFileSaving(false) }
-  }
-
   const isRunning = service.status === 'running'
   const isStopped = service.status === 'stopped'
   const hasManyContainers = service.containerCount > 1
@@ -441,7 +366,7 @@ export default function ServiceCard({ service, managedProjects, onCardClick }: S
                 className="action-btn action-btn-ghost flex items-center p-1.5 text-accent hover:text-accent hover:bg-accent/10">
                 <Pencil className="w-3.5 h-3.5" />
               </button>
-              <button onClick={handleOpenFiles}
+              <button onClick={() => setShowFiles(true)}
                 title={t('service.browseFiles')}
                 className="action-btn action-btn-ghost flex items-center p-1.5 text-textSecondary hover:text-accent">
                 <FolderOpen className="w-3.5 h-3.5" />
@@ -530,19 +455,18 @@ export default function ServiceCard({ service, managedProjects, onCardClick }: S
         document.body
       )}
 
-      {/* 文件管理弹窗 */}
+      {/* 文件管理弹窗 - 使用统一的 ProjectFileManager */}
       {showFiles && createPortal(
         <div className="fixed inset-0 z-[9999] flex items-center justify-center bg-black/50">
           <div
-            className="bg-surface border border-border rounded-lg shadow-2xl flex flex-col"
+            className="bg-surface border border-border rounded-lg shadow-2xl flex flex-col overflow-hidden"
             style={{ width: '900px', maxWidth: '96vw', height: '82vh', maxHeight: '90vh' }}
           >
+            {/* Modal header */}
             <div className="flex items-center justify-between px-4 py-3 border-b border-border shrink-0">
-              <div className="flex items-center gap-2 min-w-0">
+              <div className="flex items-center gap-2">
                 <FolderOpen className="w-4 h-4 text-warning shrink-0" />
-                <h3 className="text-sm font-semibold text-textPrimary truncate">
-                  {service.name}{filesSubPath ? `/${filesSubPath}` : ''}
-                </h3>
+                <h3 className="text-sm font-semibold text-textPrimary">{service.name}</h3>
               </div>
               <button onClick={() => setShowFiles(false)}
                 className="p-1 rounded hover:bg-border/50 text-textMuted hover:text-textPrimary transition-colors shrink-0">
@@ -550,98 +474,11 @@ export default function ServiceCard({ service, managedProjects, onCardClick }: S
               </button>
             </div>
 
-            <div className="flex-1 flex min-h-0 overflow-hidden">
-              {/* 左侧文件列表 */}
-              <div className="w-48 shrink-0 border-r border-border overflow-y-auto p-2 flex flex-col gap-0.5">
-                {/* 路径栏 + 返回上级 */}
-                {filesSubPath ? (
-                  <>
-                    <div className="flex items-center gap-1 px-2 py-1 text-xs text-textMuted mb-1">
-                      <FolderOpen className="w-3 h-3 shrink-0" />
-                      <span className="truncate">{service.name}/{filesSubPath}</span>
-                    </div>
-                    <button
-                      onClick={() => {
-                        const parts = filesSubPath.split('/')
-                        parts.pop()
-                        loadFilesDir(parts.join('/'))
-                        setSelectedFile(null)
-                      }}
-                      className="w-full flex items-center gap-1.5 px-2 py-2 rounded text-xs text-textMuted hover:text-textPrimary hover:bg-border/30 transition-colors mb-1"
-                    >
-                      <ChevronLeft className="w-3 h-3 shrink-0" />
-                      <span>{t('service.backToParent')}</span>
-                    </button>
-                    <div className="my-1 border-t border-border/50" />
-                  </>
-                ) : (
-                  <div className="flex items-center gap-1 px-2 py-1 text-xs text-textMuted mb-1">
-                    <FolderOpen className="w-3 h-3 shrink-0" />
-                    <span className="truncate">{service.name}</span>
-                  </div>
-                )}
-
-                {filesLoading ? (
-                  <div className="flex items-center justify-center py-8 text-textMuted">
-                    <Loader2 className="w-4 h-4 animate-spin" />
-                  </div>
-                ) : (
-                  fileEntries.map(f => (
-                    <button
-                      key={f.name}
-                      onClick={() => handleReadFile(f.name)}
-                      className={`w-full flex items-center gap-2 px-2.5 py-2.5 rounded text-sm transition-colors ${
-                        selectedFile === f.name
-                          ? 'bg-accent/10 text-accent'
-                          : 'text-textSecondary hover:text-textPrimary hover:bg-border/30'
-                      }`}
-                    >
-                      {f.isDir ? (
-                        <FolderOpen className="w-3.5 h-3.5 text-warning shrink-0" />
-                      ) : (
-                        <FileText className="w-3.5 h-3.5 text-textMuted shrink-0" />
-                      )}
-                      <span className="truncate">{f.name}</span>
-                    </button>
-                  ))
-                )}
-              </div>
-
-              {/* 右侧文件内容 */}
-              <div className="flex-1 flex flex-col min-w-0">
-                {selectedFile ? (
-                  <>
-                    <div className="flex items-center justify-between px-3 py-2 border-b border-border shrink-0">
-                      <span className="text-xs text-textSecondary font-mono truncate">{selectedFile}</span>
-                      <button
-                        onClick={handleSaveFile}
-                        disabled={fileSaving}
-                        className="action-btn action-btn-primary flex items-center gap-1 !text-xs !py-1"
-                      >
-                        {fileSaving ? <Loader2 className="w-3 h-3 animate-spin" /> : <Save className="w-3 h-3" />}
-                        {t('common.save')}
-                      </button>
-                    </div>
-                    <div className="flex-1 flex flex-col p-3 gap-3 min-h-0">
-                      {selectedFile.endsWith('.yml') || selectedFile.endsWith('.yaml') ? (
-                        <YamlEditor value={fileContent} onChange={setFileContent} rows={16} />
-                      ) : (
-                        <textarea
-                          value={fileContent}
-                          onChange={e => setFileContent(e.target.value)}
-                          spellCheck={false}
-                          className="w-full flex-1 bg-panel resize-none p-3 text-xs font-mono text-textPrimary outline-none leading-relaxed"
-                        />
-                      )}
-                    </div>
-                  </>
-                ) : (
-                  <div className="flex-1 flex items-center justify-center text-textMuted text-xs">
-                    {t('service.selectFileHint')}
-                  </div>
-                )}
-              </div>
-            </div>
+            {/* ProjectFileManager (minimal mode: no search, no compose buttons) */}
+            <ProjectFileManager
+              projectName={service.name}
+              minimal
+            />
           </div>
         </div>,
         document.body
