@@ -2,6 +2,7 @@
 const express = require('express');
 const { spawn } = require('child_process');
 const path = require('path');
+const yaml = require('js-yaml');
 const {
   PROJECTS_DIR, isSelfComposeProject, safePath, validateYaml, ensureDir, readFile, writeFile, exists, listDir, isRelativePathSupported, extractComposeError
 } = require('../lib/utils');
@@ -333,10 +334,67 @@ router.delete('/:name', async (req, res, next) => {
   }
 });
 
+/**
+ * 从 compose 文件中提取各 service 显式声明的端口映射（hostPort → containerPort）
+ * 仅提取 compose ports 中明确指定了宿主机端口的映射，忽略 EXPOSE-only 端口
+ * @param {string} composeContent - compose YAML 文本
+ * @returns {Map<string, Array<{hostPort: number, containerPort: number}>>}
+ */
+function extractPortMappings(composeContent) {
+  const mappings = new Map();
+  try {
+    const parsed = yaml.load(composeContent);
+    if (!parsed?.services) return mappings;
+
+    for (const [svcName, svc] of Object.entries(parsed.services)) {
+      const ports = svc.ports;
+      if (!Array.isArray(ports)) continue;
+      const svcMappings = [];
+      for (const p of ports) {
+        let hostPort = null, containerPort = null;
+        if (typeof p === 'string') {
+          // 短语法: "8005:80" 或 "8005:80/tcp"
+          const parts = p.split(':');
+          if (parts.length >= 2) {
+            hostPort = parseInt(parts[0], 10);
+            containerPort = parseInt(parts[parts.length - 1].split('/')[0], 10);
+          }
+        } else if (typeof p === 'object' && p != null) {
+          // 长语法: { target: 80, published: 8005 }
+          containerPort = p.target ? parseInt(p.target, 10) : null;
+          hostPort = p.published ? parseInt(p.published, 10) : null;
+        }
+        if (hostPort && !isNaN(hostPort) && containerPort && !isNaN(containerPort)) {
+          svcMappings.push({ hostPort, containerPort });
+        }
+      }
+      if (svcMappings.length > 0) {
+        mappings.set(svcName, svcMappings);
+      }
+    }
+  } catch (e) {
+    console.log(`[verify] 解析 compose ports 失败: ${e.message}`);
+  }
+  return mappings;
+}
+
 // 启动后验证：等待容器稳定后，检查是否真的在运行
 async function verifyServicesRunning(projectDir) {
   console.log('[verify] 等待 2s 后检查容器状态...');
   await new Promise(r => setTimeout(r, 2000));
+
+  // 解析 compose 文件中显式声明的端口映射
+  const composeFile = findComposeFile(projectDir);
+  let portMappings = new Map();
+  if (composeFile) {
+    try {
+      const content = await readFile(composeFile);
+      portMappings = extractPortMappings(content);
+      console.log(`[verify] compose 端口映射: ${[...portMappings.entries()].map(([svc, m]) => `${svc}=${m.map(p => `${p.hostPort}→${p.containerPort}`).join(',')}`).join('; ') || '无'}`);
+    } catch (e) {
+      console.log(`[verify] 读取 compose 文件失败: ${e.message}`);
+    }
+  }
 
   for (let attempt = 0; attempt < 2; attempt++) {
     if (attempt > 0) await new Promise(r => setTimeout(r, 1000));
@@ -357,15 +415,26 @@ async function verifyServicesRunning(projectDir) {
         return `以下服务未正常运行: ${notRunning.join(', ')}，请检查端口是否被占用`;
       }
 
-      // 检查端口绑定：PublishedPort=0 表示端口分配失败
+      // 检查端口绑定：仅验证 compose 文件中显式声明的端口映射
       for (const c of containers) {
         console.log(`[verify] ${c.Service || c.Name}: State=${c.State} Ports="${c.Ports}" Publishers=${JSON.stringify(c.Publishers)}`);
       }
       const portFailed = containers
         .filter(c => c.State === 'running')
         .filter(c => {
-          if (!c.Publishers || c.Publishers.length === 0) return false;
-          return c.Publishers.some(p => p.PublishedPort === 0);
+          const svcName = c.Service || c.Name;
+          const expected = portMappings.get(svcName);
+          // 服务未在 compose 中声明端口映射 → 不必检查
+          if (!expected || expected.length === 0) return false;
+          // 检查 compose 声明的每个宿主机端口是否都在 Publishers 中绑定成功
+          const unbound = expected.filter(({ hostPort }) =>
+            !(c.Publishers || []).some(p => p.PublishedPort === hostPort)
+          );
+          if (unbound.length > 0) {
+            console.log(`[verify] ${svcName}: 端口未绑定 ${unbound.map(p => `${p.hostPort}→${p.containerPort}`).join(', ')}`);
+            return true;
+          }
+          return false;
         })
         .map(c => c.Service || c.Name);
       if (portFailed.length > 0) {
