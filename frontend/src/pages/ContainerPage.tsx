@@ -83,6 +83,31 @@ export default function ContainerPage({
   // 更新检查状态
   const [updateResults, setUpdateResults] = useState<Record<string, ContainerUpdateResult>>({})
   const [checkingSingle, setCheckingSingle] = useState<Set<string>>(new Set())
+
+  // 从自动检测服务加载结果
+  useEffect(() => {
+    fetch('/api/auto-update/status')
+      .then(r => r.json())
+      .then(data => {
+        const results = (data.results || []) as any[]
+        const merged: Record<string, ContainerUpdateResult> = {}
+        results.forEach((r: any) => {
+          if (r.has_update) {
+            merged[r.container_id] = {
+              containerId: r.container_id,
+              containerName: r.container_name,
+              imageName: r.image_name,
+              hasUpdate: true,
+              currentDigest: r.current_digest,
+              remoteDigest: r.remote_digest,
+              status: 'update_available',
+            }
+          }
+        })
+        setUpdateResults(prev => ({ ...prev, ...merged }))
+      })
+      .catch(() => {})
+  }, [containers])
   const [updatingContainer, setUpdatingContainer] = useState<string | null>(null)
   const [showUpdateConfirm, setShowUpdateConfirm] = useState<ContainerDetailSummary | null>(null)
 

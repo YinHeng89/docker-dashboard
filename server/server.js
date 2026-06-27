@@ -21,6 +21,7 @@ const metricsRoutes = require('./routes/metrics');
 const containerRoutes = require('./routes/containers');
 const updateRoutes = require('./routes/update');
 const groupsRoutes = require('./routes/groups');
+const autoUpdate = require('./services/auto-update.service');
 
 const app = express();
 const server = http.createServer(app);
@@ -403,6 +404,20 @@ app.get('/api/containers/:id/check-update', updateRoutes.handleCheckUpdate);
 app.post('/api/containers/:id/update', containerRoutes.handleUpdate);
 app.post('/api/update/stream', updateRoutes.handleUpdateStream);
 
+// ==================== 自动更新检测 ====================
+app.get('/api/auto-update/status', (req, res) => {
+  res.json({ settings: autoUpdate.getSettings(), results: autoUpdate.getResults() });
+});
+app.post('/api/auto-update/check', async (req, res) => {
+  autoUpdate.runCheck();
+  res.json({ success: true, message: '检测已触发' });
+});
+app.put('/api/auto-update/settings', (req, res) => {
+  const { enabled, intervalHours } = req.body;
+  autoUpdate.updateSettings(!!enabled, intervalHours || 6);
+  res.json({ success: true });
+});
+
 // ==================== 外部 compose 项目发现 ====================
 app.get('/api/discovered', async (req, res) => {
   try {
@@ -505,7 +520,9 @@ initSamePathCheck().then(() => {
     console.log(`  JWT:     ${jwtOk ? '已配置' : '⚠️  使用随机值（生产环境请设置 JWT_SECRET）'}`);
     console.log('══════════════════════════════════════');
   });
-});
+  });
+// 启动自动更新检测服务（必须在 async init 后，但要在 API 就绪后）
+autoUpdate.init();
 
 // ==================== WebSocket: 流式终端认证 ====================
 function verifyWsAuth(req) {

@@ -928,8 +928,32 @@ function PreferencesTab({
   const { t, i18n } = useTranslation()
   const [displayName, setDisplayName] = useState('admin')
   const [autoUpdateEnabled, setAutoUpdateEnabled] = useState(false)
+  const [autoUpdateInterval, setAutoUpdateInterval] = useState(6)
   const [editingName, setEditingName] = useState(false)
   const [nameInput, setNameInput] = useState('admin')
+
+  // 加载自动更新设置（与 Header 铃铛完全一致）
+  useEffect(() => {
+    fetch('/api/auto-update/status')
+      .then(r => r.json())
+      .then(d => {
+        if (d.settings) {
+          setAutoUpdateEnabled(!!d.settings.enabled)
+          setAutoUpdateInterval(d.settings.intervalHours || 6)
+        }
+      })
+      .catch(() => {})
+  }, [])
+
+  // 保存自动更新设置
+  const saveAutoUpdate = async (enabled: boolean) => {
+    setAutoUpdateEnabled(enabled)
+    await fetch('/api/auto-update/settings', {
+      method: 'PUT',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({ enabled, intervalHours: autoUpdateInterval }),
+    })
+  }
 
   useEffect(() => {
     const saved = localStorage.getItem('displayName') || userInfo?.username || 'admin'
@@ -1075,8 +1099,8 @@ function PreferencesTab({
               </div>
               <div className="lang-group">
                 <span className="lang-label right">{t('settings.on')}</span>
-                <div className={`lang-track${autoUpdateEnabled ? ' on' : ''}`}
-                  onClick={() => setAutoUpdateEnabled(!autoUpdateEnabled)}>
+                <div className={`lang-track${autoUpdateEnabled ? '' : ' on'}`}
+                  onClick={() => saveAutoUpdate(!autoUpdateEnabled)}>
                   <span className="lang-knob">
                     <span className="lang-knob-icon lang-knob-off">
                       <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2"><circle cx="12" cy="12" r="8"/></svg>

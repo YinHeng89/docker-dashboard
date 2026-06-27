@@ -600,4 +600,4 @@ async function handleCheckAllUpdates(req, res) {
   } catch (e) { logError(`handleCheckAllUpdates → ${e.message}`); res.status(500).json({ error: e.message }); }
 }
 
-module.exports = { handleUpdateStream, handleCheckUpdate, handleCheckAllUpdates };
+module.exports = { handleUpdateStream, handleCheckUpdate, handleCheckAllUpdates, checkContainerUpdate };
