@@ -183,8 +183,12 @@ export default function SettingsPage({ metrics, services }: { metrics: SystemMet
   }, [systemLogs])
 
   const clearSystemLogs = () => {
+    // 记住当前最后一条日志 ID，防止下次轮询拉回已清除的旧数据
+    if (systemLogs.length > 0) {
+      lastLogIdRef.current = systemLogs[systemLogs.length - 1]!.id
+    }
     setSystemLogs([])
-    lastLogIdRef.current = ''
+    localStorage.removeItem('system-logs')
   }
 
   const filteredLogs = useMemo(() => {
