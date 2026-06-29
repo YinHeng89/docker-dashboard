@@ -2,3 +2,4 @@
 .env
 publish.sh
 /config
+docker.sh
