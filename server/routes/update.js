@@ -51,6 +51,15 @@ function setCachedResult(registry, repo, tag, data) {
   log(`resultCache → 缓存 ${key}`);
 }
 
+// 每 30 分钟清理一次过期缓存
+setInterval(() => {
+  const now = Date.now();
+  let tokenClean = 0, resultClean = 0;
+  for (const [k, v] of tokenCache) { if (now >= v.expiresAt) { tokenCache.delete(k); tokenClean++; } }
+  for (const [k, v] of resultCache) { if (now - v.cachedAt >= RESULT_CACHE_TTL) { resultCache.delete(k); resultClean++; } }
+  if (tokenClean > 0 || resultClean > 0) log(`缓存清理完成 tokenCache=${tokenClean} resultCache=${resultClean}`);
+}, 30 * 60 * 1000);
+
 // ==================== 工具函数 ====================
 
 // Docker socket 请求
@@ -59,6 +68,8 @@ function dockerRequest(method, pathStr, body) {
   const shortPath = pathStr.length > 120 ? pathStr.slice(0, 120) + '...' : pathStr;
   log(`dockerRequest → ${method} ${shortPath}`);
   return new Promise((resolve, reject) => {
+    let settled = false;
+    const settle = (fn) => { if (!settled) { settled = true; fn(); } };
     const opts = { socketPath: '/var/run/docker.sock', path: pathStr, method, headers: { 'Content-Type': 'application/json' } };
     const req = http.request(opts, (res) => {
       let data = '';
@@ -69,15 +80,15 @@ function dockerRequest(method, pathStr, body) {
           const parsed = data ? JSON.parse(data) : {};
           if (res.statusCode >= 400) {
             logError(`${method} ${shortPath} → ${res.statusCode} (${elapsed}ms)`, parsed.message || '');
-            return reject(new Error(parsed.message || `Docker API 错误 (${res.statusCode})`));
+            return settle(() => reject(new Error(parsed.message || `Docker API 错误 (${res.statusCode})`)));
           }
           log(`${method} ${shortPath} → ${res.statusCode} (${elapsed}ms) res: ${data.length > 200 ? data.length + ' bytes' : data}`);
-          resolve(parsed);
-        } catch { resolve(data); }
+          settle(() => resolve(parsed));
+        } catch { settle(() => resolve(data)); }
       });
     });
-    req.on('error', reject);
-    req.setTimeout(60000, () => { req.destroy(); reject(new Error('Docker socket 超时')); });
+    req.on('error', (e) => settle(() => reject(e)));
+    req.setTimeout(60000, () => settle(() => { req.destroy(); reject(new Error('Docker socket 超时')); }));
     if (body) req.write(JSON.stringify(body));
     req.end();
   });
@@ -294,7 +305,12 @@ function getAuthFromManifest(registry, repo, tag) {
       req.destroy(); // 拿到 header 即中止，不浪费带宽下载 manifest
       resolve(wwwAuth || null);
     });
-    req.on('error', () => resolve(null));
+    req.on('error', (e) => {
+      if (e.code !== 'ECONNRESET') {
+        logError(`getAuthFromManifest → 连接错误: ${e.message}`);
+        resolve(null);
+      }
+    });
     req.on('timeout', () => { req.destroy(); resolve(null); });
     req.end();
   });
@@ -335,6 +351,9 @@ function fetchRegistryManifest(registry, repo, tag, token) {
           body: body || null,
           elapsed,
         });
+      }).catch((e) => {
+        logError(`fetchRegistryManifest → getWithBody 异常: ${e.message}`);
+        resolve({ statusCode: 0, digest: null, error: 'network_error', message: e.message });
       });
     });
     req.on('error', (e) => {
@@ -451,7 +470,7 @@ async function checkContainerUpdate(containerId) {
 
   // 7. 处理结果
   if (remoteResult.error) {
-    return { imageName, containerName, status: remoteResult.error, hasUpdate: false, currentDigest: localDigest, error: remoteResult.message };
+    return { imageName, containerName, status: 'network_error', errorCode: remoteResult.error, hasUpdate: false, currentDigest: localDigest, error: remoteResult.message };
   }
 
   switch (remoteResult.statusCode) {
@@ -491,11 +510,15 @@ async function handleUpdateStream(req, res) {
     return res.end();
   }
 
-  const timeoutId = setTimeout(() => { sendProgress(res, { type: 'all-error', message: '更新超时' }); res.end(); }, 10 * 60 * 1000);
+  const timeoutId = setTimeout(() => {
+    if (!res.writableEnded) { sendProgress(res, { type: 'all-error', message: '更新超时' }); res.end(); }
+  }, 10 * 60 * 1000);
   try { await updateComposeServices(containers, projectName, res); }
-  catch (e) { sendProgress(res, { type: 'all-error', message: e.message }); }
+  catch (e) {
+    if (!res.writableEnded) sendProgress(res, { type: 'all-error', message: e.message });
+  }
   clearTimeout(timeoutId);
-  res.end();
+  if (!res.writableEnded) res.end();
   log(`========== handleUpdateStream 结束 ${Date.now() - requestStart}ms ==========`);
 }
 
@@ -535,7 +558,13 @@ async function updateComposeServices(containers, projectName, res) {
     serviceMap.get(svcName).push(c);
   }
   const serviceNames = [...serviceMap.keys()];
+  if (serviceNames.length === 0) {
+    sendProgress(res, { type: 'all-error', message: '没有可更新的 Compose 服务，请确认容器是否包含 com.docker.compose.service label' });
+    return;
+  }
   let done = 0;
+  let actuallyUpdated = 0;
+  let failedServices = [];
   const selfId = getSelfContainerId()?.slice(0, 12); // 自身容器短 ID
 
   for (const svcName of serviceNames) {
@@ -545,19 +574,25 @@ async function updateComposeServices(containers, projectName, res) {
     if (selfId && svcContainers.some(c => (c.containerId || '').slice(0, 12) === selfId)) {
       log(`[自我保护] 跳过 ${svcName}（包含自身容器 ${selfId}）`);
       for (const c of svcContainers) sendProgress(res, { type: 'step', container: c.containerId, containerName: c.containerName, step: 'skipped', message: '自身容器，需手动更新', percent: Math.round(((done + 1) / serviceNames.length) * 100) });
+      failedServices.push(svcName);
       done++;
       continue;
     }
 
     for (const c of svcContainers) sendProgress(res, { type: 'step', container: c.containerId, containerName: c.containerName, step: 'pulling', message: `拉取 ${svcName}...`, percent: Math.round((done / serviceNames.length) * 100) });
     const pc = await runCommand('docker', [...composeBaseArgs, 'pull', svcName], projectDir, res, svcName);
-    if (pc !== 0) { for (const c of svcContainers) sendProgress(res, { type: 'step', container: c.containerId, containerName: c.containerName, step: 'error', message: `${svcName} pull 失败`, percent: Math.round((done / serviceNames.length) * 100) }); done++; continue; }
+    if (pc !== 0) { for (const c of svcContainers) sendProgress(res, { type: 'step', container: c.containerId, containerName: c.containerName, step: 'error', message: `${svcName} pull 失败`, percent: Math.round((done / serviceNames.length) * 100) }); failedServices.push(svcName); done++; continue; }
     for (const c of svcContainers) sendProgress(res, { type: 'step', container: c.containerId, containerName: c.containerName, step: 'recreating', message: `重建 ${svcName}...`, percent: Math.round(((done + 0.5) / serviceNames.length) * 100) });
     const uc = await runCommand('docker', [...composeBaseArgs, 'up', '-d', '--no-deps', svcName], projectDir, res, svcName);
     for (const c of svcContainers) sendProgress(res, { type: 'step', container: c.containerId, containerName: c.containerName, step: uc === 0 ? 'done' : 'error', message: uc === 0 ? `${svcName} 完成` : `${svcName} 失败`, percent: Math.round(((done + 1) / serviceNames.length) * 100) });
+    if (uc === 0) actuallyUpdated++; else failedServices.push(svcName);
     done++;
   }
-  sendProgress(res, { type: 'all-done', message: '所有服务更新完成', percent: 100 });
+  if (actuallyUpdated === 0) {
+    sendProgress(res, { type: 'all-error', message: `所有服务均被跳过或失败，未完成任何更新${failedServices.length > 0 ? '（' + failedServices.join(', ') + '）' : ''}`, failed: failedServices, percent: 100 });
+  } else {
+    sendProgress(res, { type: 'all-done', message: `更新完成（${actuallyUpdated}/${serviceNames.length} 个服务）${failedServices.length > 0 ? '，失败: ' + failedServices.join(', ') : ''}`, failed: failedServices, percent: 100 });
+  }
   log(`── updateComposeServices 结束 ${Date.now() - startTime}ms ──`);
 }
 
