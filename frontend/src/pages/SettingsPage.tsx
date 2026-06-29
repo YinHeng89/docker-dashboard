@@ -131,11 +131,17 @@ export default function SettingsPage({ metrics, services }: { metrics: SystemMet
   const [systemLogs, setSystemLogs] = useState<SystemLogEntry[]>(() => {
     try {
       const saved = localStorage.getItem('system-logs')
-      return saved ? JSON.parse(saved) : []
+      if (!saved) return []
+      const parsed = JSON.parse(saved)
+      // 清除旧版假数据（以 'init-' 开头的 ID 为假日志）
+      if (parsed.length > 0 && parsed[0]?.id?.startsWith?.('init-')) {
+        localStorage.removeItem('system-logs')
+        return []
+      }
+      return parsed
     } catch { return [] }
   })
   const [logSearch, setLogSearch] = useState('')
-  const [logLevelFilter, setLogLevelFilter] = useState<string>('all')
   const [logPaused, setLogPaused] = useState(false)
   const [logAutoScroll, setLogAutoScroll] = useState(true)
   const logContainerRef = useRef<HTMLDivElement>(null)
@@ -144,6 +150,7 @@ export default function SettingsPage({ metrics, services }: { metrics: SystemMet
   // 从服务端拉取真实日志
   useEffect(() => {
     const fetchLogs = async () => {
+      if (lastLogIdRef.current === '__clearing__') return // 清除中，跳过
       try {
         const since = lastLogIdRef.current || undefined
         const url = since ? `/api/system/logs?since=${since}` : '/api/system/logs'
@@ -183,21 +190,26 @@ export default function SettingsPage({ metrics, services }: { metrics: SystemMet
   }, [systemLogs])
 
   const clearSystemLogs = () => {
-    // 记住当前最后一条日志 ID，防止下次轮询拉回已清除的旧数据
-    if (systemLogs.length > 0) {
-      lastLogIdRef.current = systemLogs[systemLogs.length - 1]!.id
-    }
     setSystemLogs([])
     localStorage.removeItem('system-logs')
+    // 用服务端最新日志 ID 作为 since 起点，不依赖前端 stale state
+    lastLogIdRef.current = '__clearing__'  // 标记正在清除
+    fetch('/api/system/logs')
+      .then(r => r.json())
+      .then(d => {
+        const logs = d.logs || []
+        lastLogIdRef.current = logs.length > 0 ? logs[logs.length - 1].id : ''
+      })
+      .catch(() => { lastLogIdRef.current = '' })
   }
 
   const filteredLogs = useMemo(() => {
-    return systemLogs.filter(log => {
-      if (logLevelFilter !== 'all' && log.level !== logLevelFilter) return false
-      if (logSearch && !log.message.toLowerCase().includes(logSearch.toLowerCase()) && !log.module.toLowerCase().includes(logSearch.toLowerCase())) return false
-      return true
-    })
-  }, [systemLogs, logSearch, logLevelFilter])
+    if (!logSearch) return systemLogs
+    return systemLogs.filter(log =>
+      log.message.toLowerCase().includes(logSearch.toLowerCase()) ||
+      log.module.toLowerCase().includes(logSearch.toLowerCase())
+    )
+  }, [systemLogs, logSearch])
 
   const logLevelColors: Record<string, string> = {
     info: 'text-textSecondary',
@@ -211,6 +223,9 @@ export default function SettingsPage({ metrics, services }: { metrics: SystemMet
     error: 'bg-error/10 text-error',
     success: 'bg-running/10 text-running',
   }
+  // 兜底：未知 level 用默认样式
+  const getLevelColor = (level: string) => logLevelColors[level] || 'text-textSecondary'
+  const getLevelBadge = (level: string) => logLevelBadge[level] || 'bg-border/30 text-textMuted'
 
   // ===== 服务器运行信息 =====
   const [serverInfo, setServerInfo] = useState<ServerInfo | null>(null)
@@ -329,11 +344,10 @@ export default function SettingsPage({ metrics, services }: { metrics: SystemMet
           {activeTab === 'logs' && (
             <SystemLogsTab
               filteredLogs={filteredLogs} logSearch={logSearch} setLogSearch={setLogSearch}
-              logLevelFilter={logLevelFilter} setLogLevelFilter={setLogLevelFilter}
               logPaused={logPaused} setLogPaused={setLogPaused}
               logAutoScroll={logAutoScroll} setLogAutoScroll={setLogAutoScroll}
               clearSystemLogs={clearSystemLogs}
-              logLevelColors={logLevelColors} logLevelBadge={logLevelBadge}
+              getLevelColor={getLevelColor} getLevelBadge={getLevelBadge}
               logContainerRef={logContainerRef}
             />
           )}
@@ -762,49 +776,21 @@ function MonitorTab({
 // 系统日志 Tab
 // ============================================================
 function SystemLogsTab({
-  filteredLogs, logSearch, setLogSearch, logLevelFilter, setLogLevelFilter,
+  filteredLogs, logSearch, setLogSearch,
   logPaused, setLogPaused, logAutoScroll, setLogAutoScroll, clearSystemLogs,
-  logLevelColors, logLevelBadge, logContainerRef,
+  getLevelColor, getLevelBadge, logContainerRef,
 }: {
   filteredLogs: SystemLogEntry[]; logSearch: string; setLogSearch: (v: string) => void;
-  logLevelFilter: string; setLogLevelFilter: (v: string) => void;
   logPaused: boolean; setLogPaused: (v: boolean) => void;
   logAutoScroll: boolean; setLogAutoScroll: (v: boolean) => void;
   clearSystemLogs: () => void;
-  logLevelColors: Record<string, string>; logLevelBadge: Record<string, string>;
+  getLevelColor: (level: string) => string; getLevelBadge: (level: string) => string;
   logContainerRef: React.RefObject<HTMLDivElement>;
 }) {
   const { t } = useTranslation()
-  const logCounts: Record<string, number> = { all: filteredLogs.length, info: 0, warn: 0, error: 0, success: 0 }
-  filteredLogs.forEach(l => { if (l.level in logCounts) logCounts[l.level] = (logCounts[l.level] || 0) + 1 })
-
-  const logLabels = [
-    { key: 'all', label: t('logs.allLogs'), level: 'all' as const, bg: 'bg-border/30', color: 'text-textPrimary' },
-    { key: 'info', label: t('logs.infoLogs'), level: 'info' as const, bg: 'bg-accent/10', color: 'text-accent' },
-    { key: 'warn', label: t('logs.warnLogs'), level: 'warn' as const, bg: 'bg-warning/10', color: 'text-warning' },
-    { key: 'error', label: t('logs.errorLogs'), level: 'error' as const, bg: 'bg-error/10', color: 'text-error' },
-    { key: 'success', label: t('logs.successLogs'), level: 'success' as const, bg: 'bg-running/10', color: 'text-running' },
-  ]
 
   return (
     <div className="space-y-4">
-      {/* 日志统计卡片 */}
-      <div className="grid grid-cols-2 md:grid-cols-5 gap-2">
-        {logLabels.map((item, i) => (
-          <button
-            key={i}
-            onClick={() => setLogLevelFilter(item.level)}
-            className={`p-3 rounded-xl text-left transition-all duration-200 ${
-              logLevelFilter === item.level
-                ? 'bg-surface border-2 border-accent/40'
-                : 'bg-surface border border-border hover:border-accent/20'
-            }`}>
-            <p className={`text-2xl font-bold ${item.color}`}>{logCounts[item.key]}</p>
-            <p className="text-[11px] text-textMuted mt-1">{item.label}</p>
-          </button>
-        ))}
-      </div>
-
       {/* 工具栏 */}
       <div className="flex items-center gap-3 flex-wrap">
         <div className="relative flex-1 min-w-[200px]">
@@ -835,22 +821,22 @@ function SystemLogsTab({
         style={{ maxHeight: '500px', overflowY: 'auto' }}
       >
         {filteredLogs.length === 0 ? (
-          <div className="flex flex-col items-center justify-center py-12 text-textMuted gap-2">
+          <div key="empty" className="flex flex-col items-center justify-center py-12 text-textMuted gap-2">
             <ScrollText className="w-10 h-10 opacity-20" />
             <p className="text-sm">{t('logs.noLogs')}</p>
             <p className="text-xs opacity-60">{t('logs.noLogsHint')}</p>
           </div>
         ) : (
-          <div className="font-mono text-xs">
-            {filteredLogs.map(log => (
+          <div key="logs" className="font-mono text-xs">
+            {filteredLogs.filter(l => l.id && l.message).map(log => (
               <div key={log.id}
-                className={`flex items-start gap-3 px-4 py-2.5 border-b border-border/20 hover:bg-panel/50 transition-colors ${logLevelColors[log.level]}`}>
+                className={`flex items-start gap-3 px-4 py-2.5 border-b border-border/20 hover:bg-panel/50 transition-colors ${getLevelColor(log.level)}`}>
                 <span className="text-textMuted shrink-0 w-[140px] select-none">
                   {new Date(log.timestamp).toLocaleTimeString('zh-CN', { hour12: false })}
                   <span className="ml-1 opacity-40">{new Date(log.timestamp).toLocaleDateString('zh-CN', { month: '2-digit', day: '2-digit' })}</span>
                 </span>
-                <span className={`text-[10px] px-1.5 py-0.5 rounded font-medium shrink-0 ${logLevelBadge[log.level]}`}>
-                  {log.level.toUpperCase()}
+                <span className={`text-[10px] px-1.5 py-0.5 rounded font-medium shrink-0 ${getLevelBadge(log.level || 'info')}`}>
+                  {(log.level || 'INFO').toUpperCase()}
                 </span>
                 <span className="text-textMuted shrink-0 w-20">{log.module}</span>
                 <span className="flex-1">{log.message}</span>

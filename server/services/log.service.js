@@ -21,7 +21,7 @@ function addLog(level, module, message) {
 function getLogs(since) {
   if (since) {
     let idx = buffer.findIndex(e => e.id === since);
-    if (idx === -1) return buffer.slice(-100);
+    if (idx === -1) return [];  // ID 已被逐出 → 返回空，不返回旧数据
     return buffer.slice(idx + 1);
   }
   return buffer.slice(-200);
