@@ -102,8 +102,8 @@ export default function Header({ metrics: m, activeNav, onNavChange }: HeaderPro
           </span>
         </div>
 
-        {/* 移动端紧凑指标 */}
-        <div className="sm:hidden flex items-center gap-1.5 text-[11px] text-textSecondary">
+        {/* 移动端紧凑指标 — 已隐藏 */}
+        <div className="hidden">
           <span className="px-1.5 py-0.5 rounded-md bg-panel text-textPrimary font-mono font-semibold">{m?.cpu ?? '-'}%</span>
           <span className="px-1.5 py-0.5 rounded-md bg-panel text-textPrimary font-mono font-semibold">{m?.memory ?? '-'}%</span>
         </div>
