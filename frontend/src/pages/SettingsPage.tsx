@@ -45,27 +45,6 @@ interface SystemLogEntry {
   module: string
   message: string
 }
-const logModules = ['dashboard', 'docker', 'auth', 'system', 'network', 'storage']
-const logMessages: Record<string, string[]> = {
-  info: [
-    '服务正常启动', '容器健康检查通过', '系统指标采集完成', '配置已重新加载',
-    '网络连接已建立', '数据同步完成', '定时任务执行成功', '缓存已刷新',
-    '用户会话已更新', '日志轮转完成',
-  ],
-  warn: [
-    '磁盘使用率超过70%', '内存使用率较高', '容器响应延迟', 'API 调用频率接近限制',
-    '证书即将过期（30天内）', '非关键服务响应缓慢', '配置项使用了默认值',
-  ],
-  error: [
-    '容器异常退出', '磁盘空间不足', '网络连接超时', '数据库写入失败',
-    '镜像拉取失败', 'API 认证失败',
-  ],
-  success: [
-    '容器已成功更新', '备份任务已完成', '系统重启成功', '新版本已安装',
-    '网络配置已生效', '安全策略已更新',
-  ],
-}
-
 // ===== 自动更新检测相关 =====
 type UpdateCheckState = 'idle' | 'checking' | 'up_to_date' | 'update_available' | 'error'
 interface UpdateInfo { currentVersion: string; latestVersion: string; releaseDate: string; changelog: string[] }
@@ -148,7 +127,7 @@ export default function SettingsPage({ metrics, services }: { metrics: SystemMet
     }, 200)
   }, [])
 
-  // ===== 系统日志状态 =====
+  // ===== 系统日志状态（真实数据，来自服务端日志缓冲） =====
   const [systemLogs, setSystemLogs] = useState<SystemLogEntry[]>(() => {
     try {
       const saved = localStorage.getItem('system-logs')
@@ -159,54 +138,34 @@ export default function SettingsPage({ metrics, services }: { metrics: SystemMet
   const [logLevelFilter, setLogLevelFilter] = useState<string>('all')
   const [logPaused, setLogPaused] = useState(false)
   const [logAutoScroll, setLogAutoScroll] = useState(true)
-  const logTimerRef = useRef<ReturnType<typeof setInterval> | null>(null)
   const logContainerRef = useRef<HTMLDivElement>(null)
+  const lastLogIdRef = useRef<string>('')
 
-  // 模拟系统日志生成
+  // 从服务端拉取真实日志
   useEffect(() => {
-    if (logPaused) return
-    const generateLog = () => {
-      const levels = ['info', 'info', 'info', 'info', 'warn', 'warn', 'error', 'success'] as const
-      const level = levels[Math.floor(Math.random() * levels.length)]!
-      const mod = logModules[Math.floor(Math.random() * logModules.length)]!
-      const messages = logMessages[level]!
-      const message = messages[Math.floor(Math.random() * messages.length)]!
-      const entry: SystemLogEntry = {
-        id: Date.now().toString() + Math.random().toString(36).slice(2),
-        timestamp: new Date().toISOString(),
-        level,
-        module: mod,
-        message,
-      }
-      setSystemLogs(prev => {
-        const next = [...prev, entry]
-        if (next.length > 500) return next.slice(-500)
-        return next
-      })
+    const fetchLogs = async () => {
+      try {
+        const since = lastLogIdRef.current || undefined
+        const url = since ? `/api/system/logs?since=${since}` : '/api/system/logs'
+        const res = await fetch(url)
+        const data = await res.json()
+        const newLogs = (data.logs || []) as SystemLogEntry[]
+        if (newLogs.length > 0) {
+          lastLogIdRef.current = newLogs[newLogs.length - 1]!.id
+          setSystemLogs(prev => {
+            const next = [...prev, ...newLogs]
+            return next.length > 500 ? next.slice(-500) : next
+          })
+        }
+      } catch { /* ignore */ }
     }
 
-    // 初始化几条历史日志
-    if (systemLogs.length === 0) {
-      const now = Date.now()
-      const initLogs: SystemLogEntry[] = [
-        { id: 'init-1', timestamp: new Date(now - 3600000).toISOString(), level: 'info', module: 'system', message: '系统启动完成' },
-        { id: 'init-2', timestamp: new Date(now - 3500000).toISOString(), level: 'info', module: 'docker', message: 'Docker 引擎已连接 (v24.0.7)' },
-        { id: 'init-3', timestamp: new Date(now - 3400000).toISOString(), level: 'success', module: 'auth', message: '用户认证成功' },
-        { id: 'init-4', timestamp: new Date(now - 3000000).toISOString(), level: 'info', module: 'dashboard', message: '仪表盘数据加载完成' },
-        { id: 'init-5', timestamp: new Date(now - 2000000).toISOString(), level: 'warn', module: 'system', message: '磁盘使用率超过70%' },
-        { id: 'init-6', timestamp: new Date(now - 1500000).toISOString(), level: 'info', module: 'network', message: '网络连接已建立' },
-        { id: 'init-7', timestamp: new Date(now - 1000000).toISOString(), level: 'success', module: 'storage', message: '备份任务已完成' },
-        { id: 'init-8', timestamp: new Date(now - 500000).toISOString(), level: 'info', module: 'docker', message: '容器健康检查通过' },
-        { id: 'init-9', timestamp: new Date(now - 300000).toISOString(), level: 'warn', module: 'dashboard', message: 'API 调用频率接近限制' },
-        { id: 'init-10', timestamp: new Date(now - 60000).toISOString(), level: 'info', module: 'system', message: '系统指标采集完成' },
-      ]
-      setSystemLogs(initLogs)
-    }
+    // 初始加载
+    fetchLogs()
 
-    logTimerRef.current = setInterval(generateLog, 5000)
-    return () => {
-      if (logTimerRef.current) clearInterval(logTimerRef.current)
-    }
+    // 每 2 秒轮询增量
+    const timer = setInterval(() => { if (!logPaused) fetchLogs() }, 2000)
+    return () => clearInterval(timer)
   }, [logPaused])
 
   // 自动滚动
@@ -216,14 +175,17 @@ export default function SettingsPage({ metrics, services }: { metrics: SystemMet
     }
   }, [systemLogs, logAutoScroll])
 
-  // 持久化日志
+  // 持久化日志（localStorage 缓存，刷新不丢）
   useEffect(() => {
     if (systemLogs.length > 0) {
       localStorage.setItem('system-logs', JSON.stringify(systemLogs.slice(-200)))
     }
   }, [systemLogs])
 
-  const clearSystemLogs = () => setSystemLogs([])
+  const clearSystemLogs = () => {
+    setSystemLogs([])
+    lastLogIdRef.current = ''
+  }
 
   const filteredLogs = useMemo(() => {
     return systemLogs.filter(log => {

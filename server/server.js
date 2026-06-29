@@ -423,6 +423,12 @@ app.post('/api/auto-update/clear', (req, res) => {
   res.json({ success: true });
 });
 
+// ==================== 系统日志 ====================
+const systemLogs = require('./services/log.service');
+app.get('/api/system/logs', (req, res) => {
+  res.json({ logs: systemLogs.getLogs(req.query.since) });
+});
+
 // ==================== 外部 compose 项目发现 ====================
 app.get('/api/discovered', async (req, res) => {
   try {

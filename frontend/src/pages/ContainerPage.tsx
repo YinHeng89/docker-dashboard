@@ -107,7 +107,13 @@ export default function ContainerPage({
             }
           }
         })
-        setUpdateResults(prev => ({ ...prev, ...merged }))
+        // 先删除所有旧记录，再合并新记录（避免旧的可更新标记残留）
+        const allIds = new Set(results.map((r: any) => r.container_id))
+        setUpdateResults(prev => {
+          const next = { ...prev }
+          for (const id of allIds) delete next[id]
+          return { ...next, ...merged }
+        })
       })
       .catch(() => {})
   }, [containers])

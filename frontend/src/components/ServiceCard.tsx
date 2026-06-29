@@ -381,6 +381,7 @@ export default function ServiceCard({ service, managedProjects, onCardClick }: S
         <LogsModal
           containerId={firstContainerId}
           containerName={service.name}
+          containers={service.containers.map(c => ({ id: c.id, name: c.name }))}
           onClose={() => setShowLogs(false)}
         />
       )}

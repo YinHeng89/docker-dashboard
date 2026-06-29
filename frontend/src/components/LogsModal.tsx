@@ -1,25 +1,47 @@
-import { useEffect, useState, useRef } from 'react'
+import { useEffect, useState, useRef, useCallback } from 'react'
 import { createPortal } from 'react-dom'
 import { useTranslation } from 'react-i18next'
 import { X, Loader2, Pause, Play, ScrollText } from 'lucide-react'
 
+interface ContainerRef {
+  id: string
+  name: string
+}
+
 interface LogsModalProps {
   containerId: string
   containerName: string
+  containers?: ContainerRef[]  // 多容器场景：所有容器的 id+name 列表
   onClose: () => void
 }
 
-export default function LogsModal({ containerId, containerName, onClose }: LogsModalProps) {
+export default function LogsModal({ containerId, containerName, containers, onClose }: LogsModalProps) {
   const { t } = useTranslation()
   const [lines, setLines] = useState<string[]>([])
   const [loading, setLoading] = useState(true)
   const [paused, setPaused] = useState(false)
   const [connected, setConnected] = useState(false)
+  const [activeId, setActiveId] = useState(containerId)
+  const [activeName, setActiveName] = useState(containerName)
   const bottomRef = useRef<HTMLDivElement>(null)
   const wsRef = useRef<WebSocket | null>(null)
   const pausedBuffer = useRef<string[]>([])
 
-  useEffect(() => {
+  // 构建容器列表（单容器也兼容）
+  const containerList: ContainerRef[] = (containers && containers.length > 1)
+    ? containers
+    : [{ id: containerId, name: containerName }]
+
+  const connectAndTail = useCallback((cid: string) => {
+    // 清理旧连接
+    if (wsRef.current) { wsRef.current.close(); wsRef.current = null }
+
+    setLines([])
+    setLoading(true)
+    setConnected(false)
+    setPaused(false)
+    pausedBuffer.current = []
+
     const protocol = window.location.protocol === 'https:' ? 'wss:' : 'ws:'
     const ws = new WebSocket(`${protocol}//${window.location.host}/ws/exec`)
     wsRef.current = ws
@@ -27,10 +49,9 @@ export default function LogsModal({ containerId, containerName, onClose }: LogsM
     ws.onopen = () => {
       setConnected(true)
       setLoading(false)
-      // docker logs -f: follow 模式，tail=200 先取最近 200 行
       ws.send(JSON.stringify({
         type: 'exec',
-        command: `docker logs -f --tail 200 ${containerId}`,
+        command: `docker logs -f --tail 200 ${cid}`,
         cwd: '/',
       }))
     }
@@ -65,18 +86,28 @@ export default function LogsModal({ containerId, containerName, onClose }: LogsM
     }
 
     ws.onclose = () => setConnected(false)
+  }, [t])
 
-    return () => { ws.close() }
-  }, [containerId])
+  // 切换容器
+  const switchContainer = (c: ContainerRef) => {
+    if (c.id === activeId) return
+    setActiveId(c.id)
+    setActiveName(c.name)
+    connectAndTail(c.id)
+  }
 
-  // 用 ref 跟踪暂停状态（避免闭包问题）
+  // 初始化
+  useEffect(() => {
+    connectAndTail(containerId)
+    return () => { if (wsRef.current) wsRef.current.close() }
+  }, [containerId, connectAndTail])
+
+  // 用 ref 跟踪暂停状态
   const pausedRef = useRef(false)
   useEffect(() => { pausedRef.current = paused }, [paused])
 
-  // 恢复时刷新缓冲区
   const togglePause = () => {
     if (paused) {
-      // 恢复：刷新缓冲的行
       if (pausedBuffer.current.length > 0) {
         setLines(prev => [...prev, ...pausedBuffer.current])
         pausedBuffer.current = []
@@ -102,14 +133,36 @@ export default function LogsModal({ containerId, containerName, onClose }: LogsM
   return createPortal(
     <div className="fixed inset-0 z-[9999] flex items-center justify-center bg-black/50">
       <div className="bg-surface border border-border rounded-lg shadow-2xl w-[800px] max-w-[95vw] h-[600px] flex flex-col overflow-hidden"
-        style={{ fontFamily: "'JetBrains Mono', 'Fira Code', 'Cascadia Code', monospace" }}
+        style={{ fontFamily: `'JetBrains Mono', 'Fira Code', 'Cascadia Code', monospace` }}
       >
         {/* 头部 */}
         <div className="flex items-center justify-between px-4 py-2.5 border-b border-border shrink-0">
           <div className="flex items-center gap-2 min-w-0">
             <ScrollText className="w-3.5 h-3.5 shrink-0 text-accent" />
-            <span className="text-sm font-medium text-textPrimary truncate">{containerName}</span>
-            <span className="text-xs text-textMuted font-mono truncate">{containerId}</span>
+
+            {/* 容器切换 — 多容器显示标签/下拉 */}
+            {containerList.length > 1 ? (
+              <div className="flex items-center gap-1 bg-panel rounded-md p-0.5">
+                {containerList.map(c => (
+                  <button
+                    key={c.id}
+                    onClick={() => switchContainer(c)}
+                    className={`px-2.5 py-1 text-xs rounded transition-colors truncate max-w-[120px] ${
+                      c.id === activeId
+                        ? 'bg-surface text-textPrimary font-medium shadow-sm'
+                        : 'text-textMuted hover:text-textPrimary'
+                    }`}
+                    title={c.name}
+                  >
+                    {c.name}
+                  </button>
+                ))}
+              </div>
+            ) : (
+              <span className="text-sm font-medium text-textPrimary truncate">{activeName}</span>
+            )}
+
+            <span className="text-xs text-textMuted font-mono truncate">{activeId.slice(0, 12)}</span>
             {connected && (
               <span className="flex items-center gap-1 text-xs text-running">
                 <span className="w-1.5 h-1.5 rounded-full bg-running animate-pulse" />
@@ -130,7 +183,7 @@ export default function LogsModal({ containerId, containerName, onClose }: LogsM
           </div>
         </div>
 
-        {/* 日志内容 — 保持深色终端风格 */}
+        {/* 日志内容 */}
         <div className="flex-1 overflow-auto p-3 text-xs leading-relaxed bg-[#16202f] text-[#e6edf3]">
           {loading ? (
             <div className="flex items-center justify-center h-full text-[#8b949e]">
