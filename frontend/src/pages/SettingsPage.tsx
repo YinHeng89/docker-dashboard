@@ -160,7 +160,8 @@ export default function SettingsPage({ metrics, services }: { metrics: SystemMet
         if (newLogs.length > 0) {
           lastLogIdRef.current = newLogs[newLogs.length - 1]!.id
           setSystemLogs(prev => {
-            const next = [...prev, ...newLogs]
+            // 首次加载：服务端数据替换 localStorage 缓存（避免重复累加）
+            const next = since ? [...prev, ...newLogs] : newLogs
             return next.length > 500 ? next.slice(-500) : next
           })
         }
