@@ -3,3 +3,4 @@
 publish.sh
 /config
 docker.sh
+.DS_Store
