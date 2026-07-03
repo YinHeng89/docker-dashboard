@@ -136,12 +136,15 @@ export default function Toolbar({ searchQuery, onSearchChange, onProjectCreated,
       if (!resp.ok) {
         const data = await resp.json().catch(() => ({}))
         setToast({ msg: data.error || '创建失败', type: 'error' })
+        setStreamProgress(0)
+        setStreamLogs([])
+        setShowStreamLogs(false)
         setCreating(false)
         return
       }
       // 读取 NDJSON 流
       const reader = resp.body?.getReader()
-      if (!reader) { setCreating(false); return }
+      if (!reader) { setStreamProgress(0); setStreamLogs([]); setShowStreamLogs(false); setCreating(false); return }
       const decoder = new TextDecoder()
       let buffer = ''
       while (true) {
@@ -170,11 +173,19 @@ export default function Toolbar({ searchQuery, onSearchChange, onProjectCreated,
               }, 800)
             } else if (msg.type === 'all-error') {
               setCreateError(msg.message || '启动失败')
+              setStreamProgress(0)
+              setStreamLogs([])
+              setShowStreamLogs(false)
             }
           } catch { /* skip invalid JSON */ }
         }
       }
-    } catch (e: any) { setCreateError(e.message) }
+    } catch (e: any) {
+      setCreateError(e.message)
+      setStreamProgress(0)
+      setStreamLogs([])
+      setShowStreamLogs(false)
+    }
     finally { setCreating(false) }
   }
 

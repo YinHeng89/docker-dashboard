@@ -708,7 +708,14 @@ async function handleCreateStream(req, res) {
     const failed = await verifyServicesRunning(projectDir);
     if (failed) {
       send({ type: 'log', stream: 'stderr', message: `⚠️ ${failed}` });
-      await runCompose(projectDir, ['down']);
+      try {
+        const cleanupResult = await runCompose(projectDir, ['down']);
+        if (cleanupResult.code !== 0 && cleanupResult.stderr) {
+          send({ type: 'log', stream: 'stderr', message: `⚠️ 清理容器失败: ${cleanupResult.stderr.slice(0, 200)}` });
+        }
+      } catch (cleanupErr) {
+        send({ type: 'log', stream: 'stderr', message: `⚠️ 清理异常: ${cleanupErr.message}` });
+      }
       send({ type: 'all-error', message: failed });
     } else {
       send({ type: 'progress', percent: 100, message: '启动完成' });
@@ -716,6 +723,14 @@ async function handleCreateStream(req, res) {
     }
   } catch (e) {
     send({ type: 'all-error', message: e.message });
+    // 清理失败的项目文件，避免留下僵尸项目
+    try {
+      if (await exists(projectDir)) {
+        await require('fs').promises.rm(projectDir, { recursive: true, force: true });
+      }
+    } catch (cleanupErr) {
+      console.error(`[create-stream] 清理项目目录失败: ${cleanupErr.message}`);
+    }
   }
 
   res.end();
@@ -771,6 +786,9 @@ async function handleActionStream(req, res) {
     } else if (action === 'rebuild') {
       send({ type: 'progress', percent: 10, message: '正在停止服务...' });
       const downResult = await runCompose(projectDir, ['down']);
+      if (downResult.code !== 0 && downResult.stderr) {
+        send({ type: 'log', stream: 'stderr', message: `⚠️ 停止警告: ${downResult.stderr.slice(0, 200)}` });
+      }
       send({ type: 'progress', percent: 30, message: '正在重建...' });
       args = ['up', '-d', '--build', '--force-recreate', '--remove-orphans'];
     }
@@ -819,7 +837,14 @@ async function handleActionStream(req, res) {
       const failed = await verifyServicesRunning(projectDir);
       if (failed) {
         send({ type: 'log', stream: 'stderr', message: `⚠️ ${failed}` });
-        await runCompose(projectDir, ['down']);
+        try {
+          const cleanupResult = await runCompose(projectDir, ['down']);
+          if (cleanupResult.code !== 0 && cleanupResult.stderr) {
+            send({ type: 'log', stream: 'stderr', message: `⚠️ 清理容器失败: ${cleanupResult.stderr.slice(0, 200)}` });
+          }
+        } catch (cleanupErr) {
+          send({ type: 'log', stream: 'stderr', message: `⚠️ 清理异常: ${cleanupErr.message}` });
+        }
         send({ type: 'all-error', message: failed });
       } else {
         send({ type: 'progress', percent: 100, message: '操作完成' });

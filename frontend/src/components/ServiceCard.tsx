@@ -86,7 +86,7 @@ export default function ServiceCard({ service, managedProjects, onCardClick }: S
         : await fetch(`/projects/${projectDirName}/${action}`, { method: 'POST' })
       const data = await res.json().catch(() => ({}))
       const stderr = data.stderr || ''
-      const hasStderrError = /error|failed|denied|permission|conflict/i.test(stderr)
+      const hasStderrError = /failed|denied|permission\s+denied|conflict/i.test(stderr)
       if (data.success === false || !res.ok || hasStderrError) {
         const errMsg = stderr || data.error || '操作失败'
         setToast({ msg: errMsg, type: 'error' })
@@ -117,7 +117,7 @@ export default function ServiceCard({ service, managedProjects, onCardClick }: S
       setEditFile(data.composeFile || 'docker-compose.yml')
       setShowEdit(true)
     } catch {
-      // 加载失败不打开弹窗
+      setToast({ msg: t('compose.loadFailed'), type: 'error' })
     }
     finally { setEditLoading(false) }
   }
@@ -139,7 +139,9 @@ export default function ServiceCard({ service, managedProjects, onCardClick }: S
         setToast({ msg: data.deployError, type: 'error' })
       }
       setShowEdit(false)
-    } catch { /* ignore */ }
+    } catch {
+      setToast({ msg: t('service.operationFailed'), type: 'error' })
+    }
     finally { setEditSaving(false) }
   }
 

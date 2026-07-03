@@ -379,11 +379,12 @@ export default function ProjectFileManager({
       })
       if (!resp.ok) {
         const data = await resp.json().catch(() => ({}))
-        showToast(data.error || '操作失败', 'error')
+        showToast(data.error || t('compose.operationFailed'), 'error')
+        setStreamAction(null)
         return
       }
       const reader = resp.body?.getReader()
-      if (!reader) return
+      if (!reader) { setStreamAction(null); return }
       const decoder = new TextDecoder()
       let buffer = ''
       while (true) {
@@ -402,19 +403,20 @@ export default function ProjectFileManager({
               setActionLogs(prev => [...prev.slice(-200), msg])
             } else if (msg.type === 'all-done') {
               setActionProgress(100)
-              showToast('操作完成')
+              showToast(t('service.operationSuccess'))
               setTimeout(() => setStreamAction(null), 1500)
             } else if (msg.type === 'all-error') {
-              showToast(msg.message || '操作失败', 'error')
+              showToast(msg.message || t('compose.operationFailed'), 'error')
+              setStreamAction(null)
             }
           } catch { /* skip */ }
         }
       }
     } catch (e: any) {
-      showToast(e.message || '操作失败', 'error')
+      showToast(e.message || t('compose.operationFailed'), 'error')
       setStreamAction(null)
     }
-  }, [projectName, showToast])
+  }, [projectName, showToast, t])
 
   // ==================== Derived ====================
 

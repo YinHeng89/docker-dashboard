@@ -93,15 +93,20 @@ export default function ComposeManager() {
       })
       const data = await res.json()
       if (data.success) { showToast(`${t('compose.clone')}: ${data.name}`); loadProjects() }
-      else showToast(data.error || t('compose.renameFailed'), 'error')
-    } catch (e: any) { showToast(e.message || t('compose.renameFailed'), 'error') }
+      else showToast(data.error || t('compose.operationFailed'), 'error')
+    } catch (e: any) { showToast(e.message || t('compose.operationFailed'), 'error') }
   }, [showToast, loadProjects])
 
   const handleProjectDelete = useCallback(async (name: string) => {
     if (!window.confirm(t('compose.confirmDeleteProject', { name }))) return
     try {
-      await fetch(`${API_BASE}/projects/${name}?removeFiles=true`, { method: 'DELETE' })
-      showToast(t('compose.deleteSuccess')); loadProjects()
+      const res = await fetch(`${API_BASE}/projects/${name}?removeFiles=true`, { method: 'DELETE' })
+      const data = await res.json().catch(() => ({}))
+      if (data.success !== false && res.ok) {
+        showToast(t('compose.deleteSuccess')); loadProjects()
+      } else {
+        showToast(data.error || t('compose.deleteFailed'), 'error')
+      }
     } catch (e: any) { showToast(e.message || t('compose.deleteFailed'), 'error') }
   }, [showToast, loadProjects])
 
