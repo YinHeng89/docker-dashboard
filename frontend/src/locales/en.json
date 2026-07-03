@@ -53,7 +53,11 @@
     "projectName": "Project Name",
     "composeFile": "docker-compose.yml",
     "hint": "Tip: Project will be created under <code>/projects/{{name}}</code>. \"Create & Start\" will run <code>docker compose up -d</code>.",
-    "projectNameExample": "e.g. my-web-app"
+    "projectNameExample": "e.g. my-web-app",
+    "envFile": ".env Environment Variables",
+    "envConfigured": "Configured",
+    "envPlaceholder": "DB_PASSWORD=secret\nAPI_KEY=xxxxx\nNODE_ENV=production",
+    "envHint": "Environment variables file. ${VAR} in Compose file will read from here. Docker Compose auto-loads .env from project directory."
   },
   "status": {
     "running": "Running",
@@ -249,7 +253,8 @@
     "operationFailed": "Operation failed",
     "yes": "Yes",
     "no": "No",
-    "comingSoon": "Coming soon..."
+    "comingSoon": "Coming soon...",
+    "noResults": "No results found"
   },
   "images": {
     "title": "Images",
@@ -672,7 +677,8 @@
     "folderName": "Folder name",
     "emptyDir": "Empty directory",
     "emptyDirHint": "Right-click or use buttons above to create files",
-    "loadingFiles": "Loading..."
+    "loadingFiles": "Loading...",
+    "searchProjectPlaceholder": "Search project name..."
   },
   "time": {
     "justNow": "Just now",

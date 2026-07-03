@@ -53,7 +53,11 @@
     "projectName": "项目名称",
     "composeFile": "docker-compose.yml",
     "hint": "提示：项目将创建在 <code>/projects/{{name}}</code> 目录下。「创建并启动」会自动执行 <code>docker compose up -d</code>。",
-    "projectNameExample": "例如: my-web-app"
+    "projectNameExample": "例如: my-web-app",
+    "envFile": ".env 环境变量",
+    "envConfigured": "已配置",
+    "envPlaceholder": "DB_PASSWORD=secret\nAPI_KEY=xxxxx\nNODE_ENV=production",
+    "envHint": "环境变量文件，Compose 文件中的 ${VAR} 会从此文件读取值。Docker Compose 会自动加载项目目录下的 .env 文件。"
   },
   "status": {
     "running": "运行中",
@@ -249,7 +253,8 @@
     "operationFailed": "操作失败",
     "yes": "是",
     "no": "否",
-    "comingSoon": "功能开发中，敬请期待"
+    "comingSoon": "功能开发中，敬请期待",
+    "noResults": "没有匹配结果"
   },
   "images": {
     "title": "镜像管理",
@@ -672,7 +677,8 @@
     "folderName": "文件夹名称",
     "emptyDir": "空目录",
     "emptyDirHint": "右键或使用上方按钮创建文件",
-    "loadingFiles": "加载中..."
+    "loadingFiles": "加载中...",
+    "searchProjectPlaceholder": "搜索项目名称..."
   },
   "time": {
     "justNow": "刚刚",

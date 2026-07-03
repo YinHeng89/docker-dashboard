@@ -1,7 +1,7 @@
 import { useState, useEffect, useRef } from 'react'
 import { createPortal } from 'react-dom'
 import { useTranslation } from 'react-i18next'
-import { Search, Plus, Play, X, Upload, Loader2, LayoutTemplate, ChevronLeft, FileText, ChevronDown, ChevronUp, Terminal } from 'lucide-react'
+import { Search, Plus, Play, X, Upload, Loader2, LayoutTemplate, ChevronLeft, FileText, ChevronDown, ChevronUp, Terminal, FileCode } from 'lucide-react'
 import YamlEditor from './YamlEditor'
 
 interface Template {
@@ -26,6 +26,8 @@ export default function Toolbar({ searchQuery, onSearchChange, onProjectCreated,
   const [creating, setCreating] = useState(false)
   const [createError, setCreateError] = useState<string | null>(null)
   const [toast, setToast] = useState<{ msg: string; type: 'error' } | null>(null)
+  const [envContent, setEnvContent] = useState('')
+  const [showEnvEditor, setShowEnvEditor] = useState(false)
 
   // 流式创建进度
   const [streamProgress, setStreamProgress] = useState(0)
@@ -83,6 +85,8 @@ export default function Toolbar({ searchQuery, onSearchChange, onProjectCreated,
     if (!projectName.trim()) {
       setProjectName(tpl.name.toLowerCase().replace(/\s+/g, '-').replace(/[^a-z0-9-]/g, ''))
     }
+    setEnvContent('')
+    setShowEnvEditor(false)
   }
 
   const handleCreate = async (start: boolean) => {
@@ -99,7 +103,7 @@ export default function Toolbar({ searchQuery, onSearchChange, onProjectCreated,
         const resp = await fetch('/projects', {
           method: 'POST',
           headers: { 'Content-Type': 'application/json' },
-          body: JSON.stringify({ name: projectName.trim(), content: composeContent, start: false }),
+          body: JSON.stringify({ name: projectName.trim(), content: composeContent, start: false, envContent: envContent.trim() || undefined }),
         })
         const data = await resp.json()
         if (!resp.ok) {
@@ -127,7 +131,7 @@ export default function Toolbar({ searchQuery, onSearchChange, onProjectCreated,
       const resp = await fetch('/projects/create-stream', {
         method: 'POST',
         headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify({ name: projectName.trim(), content: composeContent }),
+        body: JSON.stringify({ name: projectName.trim(), content: composeContent, envContent: envContent.trim() || undefined }),
       })
       if (!resp.ok) {
         const data = await resp.json().catch(() => ({}))
@@ -184,6 +188,8 @@ export default function Toolbar({ searchQuery, onSearchChange, onProjectCreated,
     setStreamProgress(0)
     setStreamLogs([])
     setShowStreamLogs(false)
+    setEnvContent('')
+    setShowEnvEditor(false)
   }
 
   return (
@@ -277,7 +283,7 @@ export default function Toolbar({ searchQuery, onSearchChange, onProjectCreated,
 
             {/* 第二步：编辑配置 */}
             {!showTemplateSelect && (
-              <div className="flex-1 p-4 flex flex-col gap-4 min-h-0">
+              <div className="flex-1 p-4 flex flex-col gap-4 min-h-0 overflow-y-auto">
                 {/* 返回选模板 */}
                 <button
                   onClick={() => setShowTemplateSelect(true)}
@@ -299,7 +305,33 @@ export default function Toolbar({ searchQuery, onSearchChange, onProjectCreated,
                   />
                 </div>
 
-                <div className={`${streamProgress > 0 || creating ? '' : 'flex-1'} min-h-0 flex flex-col`}>
+                {/* .env 文件编辑 */}
+                <div className="shrink-0">
+                  <button
+                    onClick={() => setShowEnvEditor(!showEnvEditor)}
+                    className="flex items-center gap-1.5 text-xs text-textMuted hover:text-accent transition-colors"
+                  >
+                    <FileCode className="w-3.5 h-3.5" />
+                    <span>{t('toolbar.envFile')}</span>
+                    {showEnvEditor ? <ChevronUp className="w-3 h-3" /> : <ChevronDown className="w-3 h-3" />}
+                    <span className={`text-xs px-1.5 py-0.5 rounded transition-opacity ${envContent.trim() ? 'text-accent bg-accent/10 opacity-100' : 'text-transparent bg-transparent opacity-0'}`}>{t('toolbar.envConfigured')}</span>
+                  </button>
+                  {showEnvEditor && (
+                    <div className="mt-2">
+                      <textarea
+                        value={envContent}
+                        onChange={e => setEnvContent(e.target.value)}
+                        placeholder={t('toolbar.envPlaceholder')}
+                        rows={6}
+                        className="w-full bg-panel border border-border rounded px-3 py-2 text-sm text-textPrimary placeholder:text-textMuted font-mono outline-none focus:border-accent transition-colors resize-none"
+                        spellCheck={false}
+                      />
+                      <p className="text-xs text-textMuted mt-1">{t('toolbar.envHint')}</p>
+                    </div>
+                  )}
+                </div>
+
+                <div className={`${streamProgress > 0 || creating ? '' : ''} flex flex-col`}>
                   <label className="block text-sm font-medium text-textPrimary mb-1 shrink-0">{t('toolbar.composeFile')}</label>
                   <YamlEditor
                     value={composeContent}
@@ -310,7 +342,7 @@ export default function Toolbar({ searchQuery, onSearchChange, onProjectCreated,
     ports:
       - "8080:80"
     restart: unless-stopped`}
-                    rows={streamProgress > 0 || creating ? 6 : 14}
+                    rows={streamProgress > 0 || creating ? 6 : 10}
                   />
                 </div>
 

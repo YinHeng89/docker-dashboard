@@ -196,7 +196,7 @@ router.get('/', async (req, res, next) => {
 // POST /projects — 新建项目
 router.post('/', async (req, res, next) => {
   try {
-    let { name, content, start = false } = req.body;
+    let { name, content, start = false, envContent } = req.body;
 
     if (!name || !/^[a-zA-Z0-9_-]+$/.test(name)) {
       return res.status(400).json({ error: '项目名称只能包含字母、数字、下划线和短横线' });
@@ -223,6 +223,11 @@ router.post('/', async (req, res, next) => {
     // 创建目录并写入 compose 文件
     await ensureDir(projectDir);
     await writeFile(path.join(projectDir, 'docker-compose.yml'), content);
+
+    // 写入 .env 文件（如果提供）
+    if (envContent && envContent.trim()) {
+      await writeFile(path.join(projectDir, '.env'), envContent.trim());
+    }
 
     let startResult = null;
     if (start) {
@@ -609,7 +614,7 @@ router.post('/:name/restart', async (req, res, next) => {
  */
 async function handleCreateStream(req, res) {
   // 校验输入
-  let { name, content } = req.body;
+  let { name, content, envContent } = req.body;
   if (!name || !/^[a-zA-Z0-9_-]+$/.test(name)) {
     return res.status(400).json({ error: '项目名称只能包含字母、数字、下划线和短横线' });
   }
@@ -647,6 +652,12 @@ async function handleCreateStream(req, res) {
     send({ type: 'progress', percent: 20, message: '正在创建项目文件...' });
     await ensureDir(projectDir);
     await writeFile(path.join(projectDir, 'docker-compose.yml'), content);
+
+    // 写入 .env 文件（如果提供）
+    if (envContent && envContent.trim()) {
+      await writeFile(path.join(projectDir, '.env'), envContent.trim());
+    }
+
     send({ type: 'progress', percent: 40, message: '项目文件已创建' });
 
     // Step 2: docker compose up -d

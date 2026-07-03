@@ -1,6 +1,6 @@
-import { useState, useEffect, useCallback, useRef } from 'react'
+import { useState, useEffect, useCallback, useRef, useMemo } from 'react'
 import { useTranslation } from 'react-i18next'
-import { FolderOpen, Loader2, ChevronRight, Package, X, Check, Pencil, Trash2, Copy, RefreshCw } from 'lucide-react'
+import { FolderOpen, Loader2, ChevronRight, Package, X, Check, Pencil, Trash2, Copy, RefreshCw, Search } from 'lucide-react'
 import ContextMenu from './ContextMenu'
 import ProjectFileManager from './ProjectFileManager'
 
@@ -33,6 +33,9 @@ export default function ComposeManager() {
   const [projectRenameValue, setProjectRenameValue] = useState('')
   const projectRenameInputRef = useRef<HTMLInputElement>(null)
 
+  // --- Search ---
+  const [searchQuery, setSearchQuery] = useState('')
+
   // --- Compose action ---
   const [actionLoading, setActionLoading] = useState<string | null>(null)
 
@@ -53,6 +56,12 @@ export default function ComposeManager() {
   }, [t, showToast])
 
   useEffect(() => { loadProjects() }, [loadProjects])
+
+  const filteredProjects = useMemo(() => {
+    if (!searchQuery.trim()) return projects
+    const q = searchQuery.trim().toLowerCase()
+    return projects.filter(p => p.name.toLowerCase().includes(q))
+  }, [projects, searchQuery])
 
   const openProject = useCallback((name: string) => {
     setSelectedProject(name)
@@ -147,19 +156,39 @@ export default function ComposeManager() {
           }`}>{toast.msg}</div>
         )}
 
+        {/* Search box */}
+        <div className="relative">
+          <Search className="absolute left-3 top-1/2 -translate-y-1/2 w-4 h-4 text-textMuted" />
+          <input
+            type="text"
+            value={searchQuery}
+            onChange={e => setSearchQuery(e.target.value)}
+            placeholder={t('compose.searchProjectPlaceholder')}
+            className="w-full bg-panel border border-border rounded-lg pl-9 pr-3 py-2 text-sm text-textPrimary outline-none focus:border-accent placeholder:text-textMuted/60"
+          />
+          {searchQuery && (
+            <button
+              onClick={() => setSearchQuery('')}
+              className="absolute right-3 top-1/2 -translate-y-1/2 text-textMuted hover:text-textPrimary"
+            >
+              <X className="w-4 h-4" />
+            </button>
+          )}
+        </div>
+
         {loading ? (
           <div className="flex items-center justify-center py-20 text-textMuted">
             <Loader2 className="w-5 h-5 animate-spin mr-2" /> {t('common.loading')}
           </div>
-        ) : projects.length === 0 ? (
+        ) : filteredProjects.length === 0 ? (
           <div className="flex flex-col items-center justify-center py-20 text-textMuted">
             <Package className="w-12 h-12 mb-3 opacity-30" />
-            <p className="text-sm">{t('compose.noProjects')}</p>
-            <p className="text-xs mt-1">{t('compose.createHint')}</p>
+            <p className="text-sm">{searchQuery ? t('common.noResults') : t('compose.noProjects')}</p>
+            <p className="text-xs mt-1">{searchQuery ? t('compose.createHint') : t('compose.createHint')}</p>
           </div>
         ) : (
           <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-3">
-            {projects.map(p => (
+            {filteredProjects.map(p => (
               <div key={p.name} data-project-card
                 onClick={() => openProject(p.name)}
                 onContextMenu={(e) => { e.preventDefault(); e.stopPropagation(); setProjectMenu({ x: e.clientX, y: e.clientY, projectName: p.name }) }}
