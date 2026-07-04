@@ -48,7 +48,7 @@ export default function Header({ metrics: m, activeNav, onNavChange }: HeaderPro
   // 更新检测结果
   const [updateResults, setUpdateResults] = useState<UpdateResult[]>([])
   const [autoEnabled, setAutoEnabled] = useState(false)
-  const [autoInterval, setAutoInterval] = useState(6)
+  const [autoInterval, setAutoInterval] = useState(12)
   const [showDropdown, setShowDropdown] = useState(false)
   const [checking, setChecking] = useState(false)
   const hasUpdates = updateResults.some(r => r.has_update === 1)
