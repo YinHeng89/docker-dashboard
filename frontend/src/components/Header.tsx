@@ -61,7 +61,7 @@ export default function Header({ metrics: m, activeNav, onNavChange }: HeaderPro
       setUpdateResults((data.results || []) as UpdateResult[])
       if (data.settings) {
         setAutoEnabled(!!data.settings.enabled)
-        setAutoInterval(data.settings.intervalHours || 6)
+        setAutoInterval(data.settings.intervalHours || 12)
       }
     } catch { /* ignore */ }
   }
