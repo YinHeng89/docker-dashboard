@@ -107,14 +107,11 @@ export default function YamlEditor({ value, onChange, placeholder, rows = 14 }: 
     const container = containerRef.current
     if (!ta || !overlay || !container) return
 
-    // textarea 无滚动条，自适应高度
-    ta.style.height = 'auto'
+    // 直接设置高度，不经过 'auto'（避免触发布局回排重置外层 scrollTop）
     ta.style.height = ta.scrollHeight + 'px'
 
-    // overlay 内容同步
     overlay.innerHTML = highlight(ta.value) + '\n'
 
-    // overlay 滚动跟随容器
     overlay.scrollTop = container.scrollTop
     overlay.scrollLeft = container.scrollLeft
   }, [])
