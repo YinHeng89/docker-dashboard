@@ -99,7 +99,7 @@ export async function fetchContainerProcesses(id: string) {
 
 // 获取容器实时 stats（一次性）
 export async function fetchContainerStats(id: string) {
-  const { data } = await client.get(`/docker/containers/${id}/stats?stream=false`)
+  const { data } = await client.get(`/docker/containers/${id}/stats?stream=false&one-shot=true`)
   return data
 }
 

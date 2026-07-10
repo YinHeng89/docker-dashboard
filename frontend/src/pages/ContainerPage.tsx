@@ -415,7 +415,7 @@ export default function ContainerPage({
             </div>
           )}
 
-          {isRunning && (
+          {c.status !== 'stopped' && (
             <div className="space-y-2">
               <div>
                 <div className="flex justify-between text-xs mb-1">
