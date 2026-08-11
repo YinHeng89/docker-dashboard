@@ -87,7 +87,7 @@ export default function ContainerPage({
   const [updateResults, setUpdateResults] = useState<Record<string, ContainerUpdateResult>>({})
   const [checkingSingle, setCheckingSingle] = useState<Set<string>>(new Set())
 
-  // 从自动检测服务加载结果
+  // 从自动检测服务加载结果（全量回填，含已最新/失败/本地镜像等状态）
   useEffect(() => {
     fetch('/api/auto-update/status')
       .then(r => r.json())
@@ -104,6 +104,19 @@ export default function ContainerPage({
               currentDigest: r.current_digest,
               remoteDigest: r.remote_digest,
               status: 'update_available',
+            }
+          } else {
+            // 无可更新：回填为已最新或受限/失败状态（沿用 DB 中记录的 status/error）
+            merged[r.container_id] = {
+              containerId: r.container_id,
+              containerName: r.container_name,
+              imageName: r.image_name,
+              hasUpdate: false,
+              currentDigest: r.current_digest,
+              remoteDigest: r.remote_digest,
+              status: (r.status as any) || 'up_to_date',
+              error: r.error || undefined,
+              message: (r as any).message || undefined,
             }
           }
         })
@@ -388,10 +401,23 @@ export default function ContainerPage({
                   <ArrowUpCircle className="w-2.5 h-2.5" />{t('containers.updateAvailable')}
                 </span>
               )}
-              {isRunning && !isChecking && updateInfo && !updateInfo.hasUpdate && !updateInfo.error && (
-                <span className="text-[10px] px-1.5 py-0.5 rounded-full bg-running/10 border border-running/20 text-running flex items-center gap-1">
-                  <ShieldCheck className="w-2.5 h-2.5" />{t('containers.upToDate')}
-                </span>
+              {isRunning && !isChecking && updateInfo && !updateInfo.hasUpdate && (
+                (() => {
+                  // 失败/受限类状态用灰色提示，已最新用绿色
+                  const errStatus = ['local_image', 'auth_required', 'rate_limited', 'network_error', 'tls_error', 'manifest_error', 'registry_unsupported', 'registry_error', 'parse_error', 'container_error', 'image_not_found']
+                  if (updateInfo.error || errStatus.includes(updateInfo.status || '')) {
+                    return (
+                      <span className="text-[10px] px-1.5 py-0.5 rounded-full bg-panel/60 border border-border text-textMuted flex items-center gap-1" title={updateInfo.message || updateInfo.error}>
+                        <AlertTriangle className="w-2.5 h-2.5" />{t('containers.updateUnchecked')}
+                      </span>
+                    )
+                  }
+                  return (
+                    <span className="text-[10px] px-1.5 py-0.5 rounded-full bg-running/10 border border-running/20 text-running flex items-center gap-1">
+                      <ShieldCheck className="w-2.5 h-2.5" />{t('containers.upToDate')}
+                    </span>
+                  )
+                })()
               )}
               <span className={`text-[11px] font-medium px-2 py-0.5 rounded-full ${cfg.text} bg-panel/50 border ${cfg.border}`}>
                 {t(`status.${c.status}`, c.status)}

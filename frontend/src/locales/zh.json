@@ -190,6 +190,7 @@
     "updateError": "检查失败",
     "currentDigest": "当前 Digest",
     "latestDigest": "最新 Digest",
+    "updateUnchecked": "未检出/受限",
     "cancel": "取消",
     "composeUpdateHint": "Compose 项目容器请通过\"服务编排\"页面更新",
     "selfProtection": "禁止操作自身容器",

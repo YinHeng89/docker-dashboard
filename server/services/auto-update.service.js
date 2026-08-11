@@ -17,9 +17,14 @@ function initTable() {
       has_update INTEGER DEFAULT 0,
       remote_digest TEXT,
       current_digest TEXT,
+      status TEXT,
+      error TEXT,
       checked_at TEXT
     )
   `);
+  // 兼容旧表：补齐 status / error 列
+  try { execute('ALTER TABLE auto_update_results ADD COLUMN status TEXT'); } catch { /* already exists */ }
+  try { execute('ALTER TABLE auto_update_results ADD COLUMN error TEXT'); } catch { /* already exists */ }
 }
 
 // ===== 偏好存取 =====
@@ -74,8 +79,8 @@ async function checkSingleContainer(container) {
     const composeProject = (container.Labels || {})['com.docker.compose.project'] || '';
     execute(
       `INSERT OR REPLACE INTO auto_update_results
-       (container_id, container_name, image_name, compose_project, has_update, remote_digest, current_digest, checked_at)
-       VALUES (?, ?, ?, ?, ?, ?, ?, ?)`,
+       (container_id, container_name, image_name, compose_project, has_update, remote_digest, current_digest, status, error, checked_at)
+       VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?)`,
       [
         container.Id,
         (container.Names || [])[0]?.replace(/^\//, '') || '',
@@ -84,6 +89,8 @@ async function checkSingleContainer(container) {
         result.hasUpdate ? 1 : 0,
         result.remoteDigest || null,
         result.currentDigest || null,
+        result.status || (result.hasUpdate ? 'update_available' : 'up_to_date'),
+        result.error || null,
         new Date().toISOString(),
       ]
     );
@@ -102,20 +109,29 @@ async function runCheck() {
     const containers = await fetchContainers();
     const runningContainers = containers.filter(c => c.State === 'running');
     console.log(`[AutoUpdate] 发现 ${containers.length} 个容器，其中 ${runningContainers.length} 个运行中`);
-    const toCheck = runningContainers.slice(0, 10);
 
+    // 全量检查运行中容器，按批次并发控制，移除原先 10 个上限，避免打爆 Registry
+    const batchSize = 4, batchDelayMs = 300;
+    let cursor = 0;
     let updated = 0, upToDate = 0, errored = 0;
-    for (const c of toCheck) {
-      try {
-        const result = await checkSingleContainer(c);
-        const name = (c.Names || [])[0]?.replace(/^\//, '') || c.Id.slice(0, 12);
-        if (result) {
-          if (result.hasUpdate) { updated++; console.log(`[AutoUpdate] ${name}: 🔴 可更新 (${result.imageName})`); }
-          else { upToDate++; }
+    while (cursor < runningContainers.length) {
+      const batch = runningContainers.slice(cursor, cursor + batchSize);
+      await Promise.all(batch.map(async (c) => {
+        try {
+          const result = await checkSingleContainer(c);
+          const name = (c.Names || [])[0]?.replace(/^\//, '') || c.Id.slice(0, 12);
+          if (result) {
+            if (result.hasUpdate) { updated++; console.log(`[AutoUpdate] ${name}: 🔴 可更新 (${result.imageName})`); }
+            else { upToDate++; }
+          }
+        } catch (e) {
+          errored++;
+          console.log(`[AutoUpdate] 检测 ${c.Id.slice(0, 12)} 失败: ${e.message}`);
         }
-      } catch (e) {
-        errored++;
-        console.log(`[AutoUpdate] 检测 ${c.Id.slice(0, 12)} 失败: ${e.message}`);
+      }));
+      cursor += batchSize;
+      if (cursor < runningContainers.length && batchDelayMs > 0) {
+        await new Promise(r => setTimeout(r, batchDelayMs));
       }
     }
 

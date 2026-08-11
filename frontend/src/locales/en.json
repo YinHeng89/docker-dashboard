@@ -190,6 +190,7 @@
     "updateError": "Check failed",
     "currentDigest": "Current Digest",
     "latestDigest": "Latest Digest",
+    "updateUnchecked": "Unchecked / Restricted",
     "cancel": "Cancel",
     "composeUpdateHint": "Compose project containers should be updated via the \"Compose\" page",
     "selfProtection": "Cannot operate self container",

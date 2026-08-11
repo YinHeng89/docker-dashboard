@@ -610,26 +610,43 @@ async function handleCheckUpdate(req, res) {
   } catch (e) { logError(`handleCheckUpdate → ${e.message}`); res.status(500).json({ error: e.message }); }
 }
 
+// 并发分批检查，避免一次性打爆 Registry（Docker Hub 限流 429），同时无容器数量上限
+async function checkContainersInBatches(containers, { batchSize = 4, concurrency = 4, batchDelayMs = 300 } = {}) {
+  const results = [];
+  let cursor = 0;
+  while (cursor < containers.length) {
+    const batch = containers.slice(cursor, cursor + batchSize);
+    const settled = await Promise.all(
+      batch.map(c =>
+        checkContainerUpdate(c.Id)
+          .then(r => ({ containerId: c.Id, containerName: (c.Names?.[0] || '').replace(/^\//, ''), ...r }))
+          .catch(e => ({ containerId: c.Id, containerName: (c.Names?.[0] || '').replace(/^\//, ''), error: e.message, hasUpdate: false }))
+      )
+    );
+    results.push(...settled);
+    cursor += batchSize;
+    if (cursor < containers.length && batchDelayMs > 0) {
+      await new Promise(r => setTimeout(r, batchDelayMs));
+    }
+  }
+  return results;
+}
+
 async function handleCheckAllUpdates(req, res) {
   const startTime = Date.now();
   log(`handleCheckAllUpdates → 开始`);
   try {
     const all = await dockerRequest('GET', '/containers/json?all=true');
     const running = all.filter(c => c.State === 'running');
-    if (!running.length) return res.json({ results: [], summary: { total: 0, hasUpdate: 0 } });
-    const toCheck = running.slice(0, 10);
-    const results = [];
-    for (const c of toCheck) {
-      try {
-        const r = await checkContainerUpdate(c.Id);
-        results.push({ containerId: c.Id, containerName: (c.Names?.[0] || '').replace(/^\//, ''), ...r });
-      } catch (e) { results.push({ containerId: c.Id, containerName: (c.Names?.[0] || '').replace(/^\//, ''), error: e.message, hasUpdate: false }); }
-    }
-    const skipped = Math.max(0, running.length - 10);
-    const summary = { total: results.length, hasUpdate: results.filter(r => r.hasUpdate).length, checked: toCheck.length, skipped };
-    if (skipped > 0) {
-      summary.message = `共有 ${running.length} 个运行中容器，为避免频繁请求，本次仅检查前 10 个，还有 ${skipped} 个未检查`;
-    }
+    if (!running.length) return res.json({ results: [], summary: { total: 0, hasUpdate: 0, checked: 0, skipped: 0 } });
+    // 全量检查运行中容器，按批次并发控制，移除原先 10 个上限
+    const results = await checkContainersInBatches(running);
+    const summary = {
+      total: results.length,
+      hasUpdate: results.filter(r => r.hasUpdate).length,
+      checked: results.length,
+      skipped: 0,
+    };
     log(`handleCheckAllUpdates → 完成 (${Date.now() - startTime}ms) 可更新: ${summary.hasUpdate}/${summary.total}`);
     res.json({ results, summary });
   } catch (e) { logError(`handleCheckAllUpdates → ${e.message}`); res.status(500).json({ error: e.message }); }
