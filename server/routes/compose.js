@@ -230,11 +230,25 @@ router.post('/', async (req, res, next) => {
     }
 
     let startResult = null;
+    let verifyWarning = null;
     if (start) {
       startResult = await runCompose(projectDir, ['up', '-d']);
+      if (startResult.code === 0 && !startResult.stderr) {
+        const failed = await verifyServicesRunning(projectDir);
+        if (failed) {
+          if (failed.hard) {
+            const logs = await runCompose(projectDir, ['logs', '--tail', '100']).catch(() => null);
+            await runCompose(projectDir, ['down']).catch(() => {});
+            startResult.stderr = `${failed.message}${logs?.stdout ? `\n--- 最近日志 ---\n${logs.stdout.slice(-2000)}` : ''}`;
+          } else {
+            // 软失败：容器仍在运行，不销毁，只是提示
+            verifyWarning = failed.message;
+          }
+        }
+      }
     }
 
-    const started = start && startResult?.code === 0;
+    const started = start && startResult?.code === 0 && !startResult?.stderr;
 
     res.json({
       success: true,
@@ -242,6 +256,7 @@ router.post('/', async (req, res, next) => {
       path: projectDir,
       started,
       startResult,
+      verifyWarning,
       composeError: start && !started ? (startResult?.stderr || 'compose 启动失败') : undefined,
     });
   } catch (e) {
@@ -301,22 +316,42 @@ router.put('/:name', async (req, res, next) => {
       });
     }
 
+    // 保存旧内容，若新配置启动失败可回滚
     const composePath = path.join(projectDir, 'docker-compose.yml');
+    const previousContent = await exists(composePath) ? await readFile(composePath) : null;
     await writeFile(composePath, content);
 
     let deployResult = null;
     let actualRedeploy = false;
     let deployError = null;
+    let verifyWarning = null;
     if (redeploy) {
       await runCompose(projectDir, ['down']);
       deployResult = await runCompose(projectDir, ['up', '-d']);
-      actualRedeploy = deployResult?.code === 0;
-      if (!actualRedeploy) {
+
+      if (deployResult.code === 0 && !deployResult.stderr) {
+        const failed = await verifyServicesRunning(projectDir);
+        if (failed) {
+          if (failed.hard) {
+            const logs = await runCompose(projectDir, ['logs', '--tail', '100']).catch(() => null);
+            await runCompose(projectDir, ['down']).catch(() => {});
+            deployError = `${failed.message}${logs?.stdout ? `\n--- 最近日志 ---\n${logs.stdout.slice(-2000)}` : ''}`;
+            // 新配置启动失败，回滚到旧配置文件（不自动重新拉起，避免叠加副作用）
+            if (previousContent !== null) {
+              await writeFile(composePath, previousContent);
+              deployError += '\n（新配置未能成功启动，已回滚 compose 文件，旧服务未自动恢复，请手动 up）';
+            }
+          } else {
+            verifyWarning = failed.message;
+          }
+        }
+      } else {
         deployError = deployResult?.stderr || 'compose 重建失败';
       }
+      actualRedeploy = deployResult?.code === 0 && !deployError;
     }
 
-    res.json({ success: true, redeployed: actualRedeploy, deployResult, deployError });
+    res.json({ success: true, redeployed: actualRedeploy, deployResult, deployError, verifyWarning });
   } catch (e) {
     next(e);
   }
@@ -404,6 +439,30 @@ router.post('/:name/clone', async (req, res, next) => {
 });
 
 /**
+ * 解析单条 compose ports 条目，返回 {hostPort, containerPort}
+ * 兼容短语法 "80" / "8005:80" / "127.0.0.1:8005:80" / "[::1]:8005:80" / 带 /tcp 后缀，
+ * 以及长语法 { target, published }。
+ * 关键修复：短语法下宿主机端口和容器端口永远取“最后两个冒号分隔段”，
+ * 而不是简单取第一段——否则带 host IP 前缀（如 127.0.0.1:8005:80）时，
+ * parseInt("127.0.0.1") 会被错误解析成端口 127。
+ */
+function parsePortEntry(p) {
+  let hostPort = null, containerPort = null;
+  if (typeof p === 'string') {
+    const portsPart = p.split('/')[0]; // 去掉 /tcp /udp 协议后缀
+    const parts = portsPart.split(':');
+    if (parts.length >= 2) {
+      containerPort = parseInt(parts[parts.length - 1], 10);
+      hostPort = parseInt(parts[parts.length - 2], 10);
+    }
+  } else if (typeof p === 'object' && p != null) {
+    containerPort = p.target ? parseInt(p.target, 10) : null;
+    hostPort = p.published ? parseInt(p.published, 10) : null;
+  }
+  return { hostPort, containerPort };
+}
+
+/**
  * 从 compose 文件中提取各 service 显式声明的端口映射（hostPort → containerPort）
  * 仅提取 compose ports 中明确指定了宿主机端口的映射，忽略 EXPOSE-only 端口
  * @param {string} composeContent - compose YAML 文本
@@ -420,19 +479,7 @@ function extractPortMappings(composeContent) {
       if (!Array.isArray(ports)) continue;
       const svcMappings = [];
       for (const p of ports) {
-        let hostPort = null, containerPort = null;
-        if (typeof p === 'string') {
-          // 短语法: "8005:80" 或 "8005:80/tcp"
-          const parts = p.split(':');
-          if (parts.length >= 2) {
-            hostPort = parseInt(parts[0], 10);
-            containerPort = parseInt(parts[parts.length - 1].split('/')[0], 10);
-          }
-        } else if (typeof p === 'object' && p != null) {
-          // 长语法: { target: 80, published: 8005 }
-          containerPort = p.target ? parseInt(p.target, 10) : null;
-          hostPort = p.published ? parseInt(p.published, 10) : null;
-        }
+        const { hostPort, containerPort } = parsePortEntry(p);
         if (hostPort && !isNaN(hostPort) && containerPort && !isNaN(containerPort)) {
           svcMappings.push({ hostPort, containerPort });
         }
@@ -447,12 +494,40 @@ function extractPortMappings(composeContent) {
   return mappings;
 }
 
-// 启动后验证：等待容器稳定后，检查是否真的在运行
-async function verifyServicesRunning(projectDir) {
-  console.log('[verify] 等待 2s 后检查容器状态...');
-  await new Promise(r => setTimeout(r, 2000));
+/**
+ * 判断某个 hostPort 是否已在容器上成功绑定。
+ * 优先使用结构化的 Publishers 字段（较新 docker compose 版本才有）；
+ * 如果该字段不存在（老版本/精简版 docker compose 的 `ps --format json` 不包含它），
+ * 回退到解析字符串形式的 Ports 字段（如 "0.0.0.0:8080->80/tcp, :::8080->80/tcp"）。
+ * 修复点：原实现只信任 Publishers，字段缺失时恒判定为“未绑定”，
+ * 导致所有声明了端口的服务在该 docker compose 版本下必然被误报失败。
+ */
+function isHostPortBound(container, hostPort) {
+  if (Array.isArray(container.Publishers) && container.Publishers.length > 0) {
+    return container.Publishers.some(p => p.PublishedPort === hostPort);
+  }
+  const portsStr = container.Ports || '';
+  return new RegExp(`[:.]${hostPort}->`).test(portsStr);
+}
 
-  // 解析 compose 文件中显式声明的端口映射
+/**
+ * 启动后验证：等待容器稳定后，检查是否真的在运行。
+ *
+ * 返回值:
+ *   null                          — 验证通过
+ *   { hard: true,  message }      — 硬失败：容器确实退出/崩溃，调用方应当清理
+ *   { hard: false, message }      — 软失败：容器仍在运行，只是端口验证超时/不确定，
+ *                                    调用方不应该销毁容器，只需要提示用户
+ *
+ * 修复点：
+ * 1. 原来固定等待 2s + 最多重试 1 次（约 3s 总时长），
+ *    对启动较慢的镜像（Postgres/MySQL/ES 等）根本不够，会把“还没起来”误判成“失败”。
+ *    这里拉长到 6 次 × 2.5s（约 15s），且只要有进展就不提前判失败。
+ * 2. 原来不区分“容器已退出”和“容器在跑但端口一时验证不到”，
+ *    一律走同一个失败分支后被上层 down 掉。这里拆成 hard/soft 两种，
+ *    只有 hard 失败（容器真的退出/持续重启）才建议销毁。
+ */
+async function verifyServicesRunning(projectDir) {
   const composeFile = findComposeFile(projectDir);
   let portMappings = new Map();
   if (composeFile) {
@@ -465,57 +540,161 @@ async function verifyServicesRunning(projectDir) {
     }
   }
 
-  for (let attempt = 0; attempt < 2; attempt++) {
-    if (attempt > 0) await new Promise(r => setTimeout(r, 1000));
+  const maxAttempts = 6;
+  const intervalMs = 2500;
+  const initialDelayMs = 1500;
+
+  await new Promise(r => setTimeout(r, initialDelayMs));
+
+  for (let attempt = 0; attempt < maxAttempts; attempt++) {
+    if (attempt > 0) await new Promise(r => setTimeout(r, intervalMs));
+
     const psResult = await runCompose(projectDir, ['ps', '-a', '--format', 'json']);
     console.log(`[verify] 第${attempt + 1}次 ps: code=${psResult.code}`, psResult.stdout.slice(0, 300));
     if (psResult.code !== 0) continue;
+
+    let containers;
     try {
       const lines = psResult.stdout.trim().split('\n').filter(Boolean);
       if (lines.length === 0) continue;
-      const containers = JSON.parse(`[${lines.join(',')}]`);
+      containers = JSON.parse(`[${lines.join(',')}]`);
+    } catch (e) {
+      console.log(`[verify] 解析失败: ${e.message}`);
+      continue;
+    }
 
-      // 检查容器状态
-      const notRunning = containers
-        .filter(c => c.State && c.State !== 'running')
-        .map(c => c.Service || c.Name);
-      if (notRunning.length > 0) {
-        console.log(`[verify] ❌ 未运行: ${notRunning.join(', ')}`);
-        return `以下服务未正常运行: ${notRunning.join(', ')}，请检查端口是否被占用`;
-      }
+    // 硬失败：容器已退出/崩溃。重启循环给 2 次容忍（可能是慢启动导致的健康检查重启）
+    const hardFailed = containers.filter(c => {
+      const state = (c.State || '').toLowerCase();
+      if (['exited', 'dead'].includes(state)) return true;
+      if (state === 'restarting' && attempt >= 2) return true;
+      return false;
+    });
+    if (hardFailed.length > 0) {
+      const names = hardFailed.map(c => c.Service || c.Name);
+      console.log(`[verify] ❌ 硬失败: ${names.join(', ')}`);
+      return { hard: true, message: `以下服务未正常运行: ${names.join(', ')}，请检查端口是否被占用或查看日志` };
+    }
 
-      // 检查端口绑定：仅验证 compose 文件中显式声明的端口映射
-      for (const c of containers) {
-        console.log(`[verify] ${c.Service || c.Name}: State=${c.State} Ports="${c.Ports}" Publishers=${JSON.stringify(c.Publishers)}`);
-      }
-      const portFailed = containers
-        .filter(c => c.State === 'running')
-        .filter(c => {
-          const svcName = c.Service || c.Name;
-          const expected = portMappings.get(svcName);
-          // 服务未在 compose 中声明端口映射 → 不必检查
-          if (!expected || expected.length === 0) return false;
-          // 检查 compose 声明的每个宿主机端口是否都在 Publishers 中绑定成功
-          const unbound = expected.filter(({ hostPort }) =>
-            !(c.Publishers || []).some(p => p.PublishedPort === hostPort)
-          );
-          if (unbound.length > 0) {
-            console.log(`[verify] ${svcName}: 端口未绑定 ${unbound.map(p => `${p.hostPort}→${p.containerPort}`).join(', ')}`);
-            return true;
-          }
-          return false;
-        })
-        .map(c => c.Service || c.Name);
-      if (portFailed.length > 0) {
-        console.log(`[verify] ❌ 端口未绑定: ${portFailed.join(', ')}`);
-        return `以下服务端口未成功绑定: ${portFailed.join(', ')}，请检查端口是否被占用`;
-      }
+    const allRunning = containers.every(c => (c.State || '').toLowerCase() === 'running');
 
+    for (const c of containers) {
+      console.log(`[verify] ${c.Service || c.Name}: State=${c.State} Ports="${c.Ports}" Publishers=${JSON.stringify(c.Publishers)}`);
+    }
+
+    const portFailed = containers
+      .filter(c => (c.State || '').toLowerCase() === 'running')
+      .filter(c => {
+        const svcName = c.Service || c.Name;
+        const expected = portMappings.get(svcName);
+        if (!expected || expected.length === 0) return false; // 未声明端口映射，不检查
+        const unbound = expected.filter(({ hostPort }) => !isHostPortBound(c, hostPort));
+        if (unbound.length > 0) {
+          console.log(`[verify] ${svcName}: 端口未绑定 ${unbound.map(p => `${p.hostPort}→${p.containerPort}`).join(', ')}`);
+          return true;
+        }
+        return false;
+      })
+      .map(c => c.Service || c.Name);
+
+    if (allRunning && portFailed.length === 0) {
       console.log(`[verify] ✅ 全部 running 端口正常`);
       return null;
-    } catch (e) { console.log(`[verify] 解析失败: ${e.message}`); }
+    }
+
+    // 还没到最后一次尝试，继续等待，不提前判失败
+    if (attempt < maxAttempts - 1) continue;
+
+    // 达到最大等待时间仍未就绪：软失败，交给调用方决定（不建议销毁）
+    console.log(`[verify] ⚠️ 超时未确认就绪，判定为软失败: portFailed=${portFailed.join(',')}`);
+    return {
+      hard: false,
+      message: portFailed.length > 0
+        ? `以下服务端口在 ${(maxAttempts * intervalMs + initialDelayMs) / 1000}s 内未确认绑定: ${portFailed.join(', ')}，容器仍在运行，请手动确认`
+        : '部分服务未能在超时时间内确认进入 running 状态，容器仍在运行，请手动检查',
+    };
   }
   return null;
+}
+
+/**
+ * 根据 verifyServicesRunning 的结果，决定是否清理容器，并生成给前端的错误/警告信息。
+ * 只有 hard 失败才会自动 down；soft 失败保留容器，仅返回警告文案。
+ * 销毁前会先抓取最近日志，避免容器删除后无法排查原因。
+ */
+async function resolveVerifyResult(projectDir, failed) {
+  if (!failed) return { success: true, warning: null, stderr: null };
+
+  if (failed.hard) {
+    const logs = await runCompose(projectDir, ['logs', '--tail', '100']).catch(() => null);
+    const cleanup = await runCompose(projectDir, ['down']).catch((e) => ({ code: -1, stderr: e.message }));
+    if (cleanup.code !== 0 && cleanup.stderr) {
+      console.log(`[verify] 清理容器失败: ${cleanup.stderr}`);
+    }
+    const stderr = `${failed.message}${logs?.stdout ? `\n--- 最近日志 ---\n${logs.stdout.slice(-2000)}` : ''}`;
+    return { success: false, warning: null, stderr };
+  }
+
+  // 软失败：不销毁，容器继续运行，只提示
+  return { success: true, warning: failed.message, stderr: null };
+}
+
+/**
+ * 巡检当前项目容器状态，返回运行中/硬失败的 service 列表。
+ * 与 verifyServicesRunning 共用同一套"硬失败"判定标准（exited/dead），
+ * 但这里不做端口校验、不重试——只用于 docker compose 命令本身报错后的一次性诊断。
+ */
+async function inspectContainerStates(projectDir) {
+  const psResult = await runCompose(projectDir, ['ps', '-a', '--format', 'json']).catch(() => null);
+  if (!psResult || psResult.code !== 0) return { containers: [], hardFailed: [], running: [], parsed: false };
+
+  try {
+    const lines = psResult.stdout.trim().split('\n').filter(Boolean);
+    const containers = lines.length ? JSON.parse(`[${lines.join(',')}]`) : [];
+    const hardFailed = containers
+      .filter(c => ['exited', 'dead'].includes((c.State || '').toLowerCase()))
+      .map(c => c.Service || c.Name);
+    const running = containers
+      .filter(c => (c.State || '').toLowerCase() === 'running')
+      .map(c => c.Service || c.Name);
+    return { containers, hardFailed, running, parsed: true };
+  } catch (e) {
+    console.log(`[inspect] 解析失败: ${e.message}`);
+    return { containers: [], hardFailed: [], running: [], parsed: false };
+  }
+}
+
+/**
+ * docker compose 命令本身非零退出（up/restart/rebuild 进程失败，而非 verify 阶段失败）后的兜底处理。
+ *
+ * 修复点：原来这条路径完全不触碰容器——REST 接口只是把原始 stderr 透传给用户，
+ * handleActionStream 的 catch 更是直接 all-error 完事，既没有诊断也没有清理，
+ * 项目可能停留在"部分 service 起来了、部分死了"的半成品状态，且失败日志随时间被覆盖。
+ *
+ * 处理原则：只清理确实 exited/dead 的 service，不碰仍在 running 的——
+ * 避免重犯"一刀切 down 整个项目"的错误（多 service 项目里其他服务可能是好的）。
+ */
+async function handleCommandFailure(projectDir, rawErrorMessage) {
+  const state = await inspectContainerStates(projectDir);
+
+  if (!state.parsed || state.hardFailed.length === 0) {
+    // 巡检不到明确死亡的 service（例如 up 还没来得及创建任何容器就失败），
+    // 不做任何容器操作，原样返回命令报错
+    return { message: rawErrorMessage, cleaned: [] };
+  }
+
+  const logs = await runCompose(projectDir, ['logs', '--tail', '100', ...state.hardFailed]).catch(() => null);
+  // 只清理死掉的 service，保留仍在跑的
+  const cleanup = await runCompose(projectDir, ['rm', '-f', '-s', ...state.hardFailed]).catch((e) => ({ code: -1, stderr: e.message }));
+  if (cleanup?.code !== 0 && cleanup?.stderr) {
+    console.log(`[handleCommandFailure] 清理失败 service 出错: ${cleanup.stderr}`);
+  }
+
+  const runningNote = state.running?.length ? `（${state.running.join(', ')} 仍在正常运行，未受影响）` : '';
+  return {
+    message: `${rawErrorMessage}\n以下 service 启动失败已清理: ${state.hardFailed.join(', ')}${runningNote}${logs?.stdout ? `\n--- 失败服务日志 ---\n${logs.stdout.slice(-2000)}` : ''}`,
+    cleaned: state.hardFailed,
+  };
 }
 
 // POST /projects/:name/up
@@ -525,21 +704,21 @@ router.post('/:name/up', async (req, res, next) => {
     const result = await runCompose(projectDir, ['up', '-d']);
     console.log(`[up] compose 返回: code=${result.code} stderr="${result.stderr?.slice(0, 100) || ''}"`);
 
-    const needVerify = result.code === 0 && !result.stderr;
-    console.log(`[up] 是否需要验证: ${needVerify ? '是' : '否'}`);
-    const failedServices = needVerify ? await verifyServicesRunning(projectDir) : null;
-
-    // 验证失败：自动 down 清理已启动但状态异常的容器
-    if (failedServices) {
-      console.log(`[up] 端口验证失败，清理容器: ${failedServices}`);
-      await runCompose(projectDir, ['down']);
+    // 命令本身失败（非零 code 或有 stderr）：巡检容器状态，只清理真正死掉的 service
+    if (result.code !== 0 || result.stderr) {
+      const { message } = await handleCommandFailure(projectDir, result.stderr || `compose 退出码 ${result.code}`);
+      return res.json({ ...result, success: false, stderr: message });
     }
 
-    console.log(`[up] 最终: success=${result.code === 0 && !failedServices} stderr="${(failedServices || result.stderr)?.slice(0, 100) || ''}"`);
+    const failed = await verifyServicesRunning(projectDir);
+    const { success: verifySuccess, warning, stderr: hardStderr } = await resolveVerifyResult(projectDir, failed);
+
+    console.log(`[up] 最终: success=${verifySuccess} stderr="${(hardStderr || result.stderr)?.slice(0, 100) || ''}"`);
     res.json({
       ...result,
-      success: result.code === 0 && !failedServices,
-      stderr: failedServices || result.stderr,
+      success: verifySuccess,
+      stderr: hardStderr || result.stderr,
+      warning,
     });
   } catch (e) { next(e); }
 });
@@ -551,7 +730,21 @@ router.post('/:name/rebuild', async (req, res, next) => {
     // 先停止再重建（--force-recreate 确保容器一定会被重建）
     await runCompose(projectDir, ['down']);
     const result = await runCompose(projectDir, ['up', '-d', '--build', '--force-recreate', '--remove-orphans']);
-    res.json({ success: result.code === 0, ...result });
+
+    if (result.code !== 0 || result.stderr) {
+      const { message } = await handleCommandFailure(projectDir, result.stderr || `compose 退出码 ${result.code}`);
+      return res.json({ ...result, success: false, stderr: message });
+    }
+
+    const failed = await verifyServicesRunning(projectDir);
+    const { success: verifySuccess, warning, stderr: hardStderr } = await resolveVerifyResult(projectDir, failed);
+
+    res.json({
+      ...result,
+      success: verifySuccess,
+      stderr: hardStderr || result.stderr,
+      warning,
+    });
   } catch (e) { next(e); }
 });
 
@@ -589,21 +782,20 @@ router.post('/:name/restart', async (req, res, next) => {
     const result = await runCompose(projectDir, ['restart']);
     console.log(`[restart] compose 返回: code=${result.code} stderr="${result.stderr?.slice(0, 100) || ''}"`);
 
-    const needVerify = result.code === 0 && !result.stderr;
-    console.log(`[restart] 是否需要验证: ${needVerify ? '是' : '否'}`);
-    const failedServices = needVerify ? await verifyServicesRunning(projectDir) : null;
-
-    // 验证失败：自动 down 清理已启动但状态异常的容器
-    if (failedServices) {
-      console.log(`[restart] 端口验证失败，清理容器: ${failedServices}`);
-      await runCompose(projectDir, ['down']);
+    if (result.code !== 0 || result.stderr) {
+      const { message } = await handleCommandFailure(projectDir, result.stderr || `compose 退出码 ${result.code}`);
+      return res.json({ ...result, success: false, stderr: message });
     }
 
-    console.log(`[restart] 最终: success=${result.code === 0 && !failedServices} stderr="${(failedServices || result.stderr)?.slice(0, 100) || ''}"`);
+    const failed = await verifyServicesRunning(projectDir);
+    const { success: verifySuccess, warning, stderr: hardStderr } = await resolveVerifyResult(projectDir, failed);
+
+    console.log(`[restart] 最终: success=${verifySuccess} stderr="${(hardStderr || result.stderr)?.slice(0, 100) || ''}"`);
     res.json({
       ...result,
-      success: result.code === 0 && !failedServices,
-      stderr: failedServices || result.stderr,
+      success: verifySuccess,
+      stderr: hardStderr || result.stderr,
+      warning,
     });
   } catch (e) { next(e); }
 });
@@ -704,26 +896,26 @@ async function handleCreateStream(req, res) {
       setTimeout(() => { proc.kill(); reject(new Error('命令执行超时')); }, 300000);
     });
 
-    // Step 3: 验证服务
+    // Step 3: 验证服务（区分硬失败/软失败，软失败不销毁容器）
     const failed = await verifyServicesRunning(projectDir);
-    if (failed) {
-      send({ type: 'log', stream: 'stderr', message: `⚠️ ${failed}` });
-      try {
-        const cleanupResult = await runCompose(projectDir, ['down']);
-        if (cleanupResult.code !== 0 && cleanupResult.stderr) {
-          send({ type: 'log', stream: 'stderr', message: `⚠️ 清理容器失败: ${cleanupResult.stderr.slice(0, 200)}` });
-        }
-      } catch (cleanupErr) {
-        send({ type: 'log', stream: 'stderr', message: `⚠️ 清理异常: ${cleanupErr.message}` });
-      }
-      send({ type: 'all-error', message: failed });
+    if (failed?.hard) {
+      // 验证硬失败：复用 handleCommandFailure，只清理真正死掉的 service，不碰仍在运行的
+      const { message } = await handleCommandFailure(projectDir, failed.message);
+      send({ type: 'log', stream: 'stderr', message: `⚠️ ${message}` });
+      send({ type: 'all-error', message });
+    } else if (failed && !failed.hard) {
+      // 软失败：容器仍在运行，仅提示，不销毁，不清理项目文件
+      send({ type: 'warning', message: failed.message });
+      send({ type: 'progress', percent: 100, message: '启动完成（端口验证未完全确认）' });
+      send({ type: 'all-done', name });
     } else {
       send({ type: 'progress', percent: 100, message: '启动完成' });
       send({ type: 'all-done', name });
     }
   } catch (e) {
     send({ type: 'all-error', message: e.message });
-    // 清理失败的项目文件，避免留下僵尸项目
+    // 清理失败的项目文件，避免留下僵尸项目（仅在 compose 命令本身失败时才清理目录，
+    // 软失败分支不会走到这里，因为上面已经 return 了）
     try {
       if (await exists(projectDir)) {
         await require('fs').promises.rm(projectDir, { recursive: true, force: true });
@@ -831,21 +1023,19 @@ async function handleActionStream(req, res) {
       setTimeout(() => { proc.kill(); reject(new Error('命令执行超时')); }, 300000);
     });
 
-    // 验证（仅 up/restart/rebuild 需要）
+    // 验证（仅 up/restart/rebuild 需要），区分硬失败/软失败
     if (['up', 'restart', 'rebuild'].includes(action)) {
       send({ type: 'progress', percent: 80, message: '正在验证服务...' });
       const failed = await verifyServicesRunning(projectDir);
-      if (failed) {
-        send({ type: 'log', stream: 'stderr', message: `⚠️ ${failed}` });
-        try {
-          const cleanupResult = await runCompose(projectDir, ['down']);
-          if (cleanupResult.code !== 0 && cleanupResult.stderr) {
-            send({ type: 'log', stream: 'stderr', message: `⚠️ 清理容器失败: ${cleanupResult.stderr.slice(0, 200)}` });
-          }
-        } catch (cleanupErr) {
-          send({ type: 'log', stream: 'stderr', message: `⚠️ 清理异常: ${cleanupErr.message}` });
-        }
-        send({ type: 'all-error', message: failed });
+      if (failed?.hard) {
+        // 验证硬失败：复用 handleCommandFailure，只清理真正死掉的 service，不碰仍在运行的
+        const { message } = await handleCommandFailure(projectDir, failed.message);
+        send({ type: 'log', stream: 'stderr', message: `⚠️ ${message}` });
+        send({ type: 'all-error', message });
+      } else if (failed && !failed.hard) {
+        send({ type: 'warning', message: failed.message });
+        send({ type: 'progress', percent: 100, message: '操作完成（端口验证未完全确认）' });
+        send({ type: 'all-done', action });
       } else {
         send({ type: 'progress', percent: 100, message: '操作完成' });
         send({ type: 'all-done', action });
@@ -855,7 +1045,9 @@ async function handleActionStream(req, res) {
       send({ type: 'all-done', action });
     }
   } catch (e) {
-    send({ type: 'all-error', message: e.message });
+    // 命令本身失败：巡检容器状态，只清理真正死掉的 service（不碰仍在跑的），带日志诊断
+    const { message } = await handleCommandFailure(projectDir, e.message);
+    send({ type: 'all-error', message });
   }
 
   res.end();
