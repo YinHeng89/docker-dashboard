@@ -219,8 +219,8 @@ const API_BASE = ''
       ))
       showToast(t('compose.saved'))
       loadDir(filesSubPath)
-    } catch (e: any) {
-      showToast(e.message || t('compose.saveFailed'), 'error')
+    } catch (e: unknown) {
+      showToast((e as Error).message || t('compose.saveFailed'), 'error')
     } finally { setSaving(false) }
   }, [currentEditingPath, fileContent, filesSubPath, showToast, loadDir])
 
@@ -241,8 +241,8 @@ const API_BASE = ''
       } else {
         showToast(data.error || t('compose.uploadFailed'), 'error')
       }
-    } catch (e: any) {
-      showToast(e.message || t('compose.uploadFailed'), 'error')
+    } catch (e: unknown) {
+      showToast((e as Error).message || t('compose.uploadFailed'), 'error')
     } finally { setUploading(false) }
   }, [projectName, filesSubPath, showToast, loadDir])
 
@@ -282,7 +282,7 @@ const API_BASE = ''
       } else {
         showToast(data.error || t('compose.deleteFailed'), 'error')
       }
-    } catch (e: any) { showToast(e.message || t('compose.deleteFailed'), 'error') }
+    } catch (e: unknown) { showToast((e as Error).message || t('compose.deleteFailed'), 'error') }
   }, [filesSubPath, currentEditingPath, showToast, loadDir])
 
   const handleDownload = useCallback((filePath: string) => {
@@ -330,7 +330,7 @@ const API_BASE = ''
           loadDir(filesSubPath)
         } else showToast(data.error || t('compose.renameFailed'), 'error')
       }
-    } catch (e: any) { showToast(e.message || t('compose.operationFailed'), 'error') }
+    } catch (e: unknown) { showToast((e as Error).message || t('compose.operationFailed'), 'error') }
     setRenameTarget(null)
   }, [renameTarget, renameValue, renameMode, filesSubPath, showToast, loadDir, openTab, currentEditingPath])
 
@@ -414,8 +414,8 @@ const API_BASE = ''
           } catch { /* skip */ }
         }
       }
-    } catch (e: any) {
-      showToast(e.message || t('compose.operationFailed'), 'error')
+    } catch (e: unknown) {
+      showToast((e as Error).message || t('compose.operationFailed'), 'error')
       setStreamAction(null)
     }
   }, [projectName, showToast, t])

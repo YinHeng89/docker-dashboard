@@ -79,7 +79,7 @@ export default function ComposeManager() {
       const data = await res.json()
       if (data.success) { showToast(t('compose.renameSuccess')); loadProjects() }
       else showToast(data.error || t('compose.renameFailed'), 'error')
-    } catch (e: any) { showToast(e.message || t('compose.renameFailed'), 'error') }
+    } catch (e: unknown) { showToast((e as Error).message || t('compose.renameFailed'), 'error') }
     setProjectRenameTarget(null)
   }, [projectRenameTarget, projectRenameValue, showToast, loadProjects])
 
@@ -94,7 +94,7 @@ export default function ComposeManager() {
       const data = await res.json()
       if (data.success) { showToast(`${t('compose.clone')}: ${data.name}`); loadProjects() }
       else showToast(data.error || t('compose.operationFailed'), 'error')
-    } catch (e: any) { showToast(e.message || t('compose.operationFailed'), 'error') }
+    } catch (e: unknown) { showToast((e as Error).message || t('compose.operationFailed'), 'error') }
   }, [showToast, loadProjects])
 
   const handleProjectDelete = useCallback(async (name: string) => {
@@ -107,7 +107,7 @@ export default function ComposeManager() {
       } else {
         showToast(data.error || t('compose.deleteFailed'), 'error')
       }
-    } catch (e: any) { showToast(e.message || t('compose.deleteFailed'), 'error') }
+    } catch (e: unknown) { showToast((e as Error).message || t('compose.deleteFailed'), 'error') }
   }, [showToast, loadProjects])
 
   // ==================== Compose Actions ====================
@@ -131,7 +131,7 @@ export default function ComposeManager() {
         const err = stderr || data.error || t('service.operationFailed')
         showToast(err.length > 200 ? err.slice(0, 200) + '…' : err, 'error')
       }
-    } catch (e: any) { showToast(e.message || t('service.operationFailed'), 'error') }
+    } catch (e: unknown) { showToast((e as Error).message || t('service.operationFailed'), 'error') }
     finally { setActionLoading(null) }
   }, [selectedProject, t, showToast])
 

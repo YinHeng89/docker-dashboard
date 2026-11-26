@@ -489,9 +489,9 @@ function MonitorTab({
   metrics, timeRange, setTimeRange, displayData, chartColor, containerRanking,
   alertRules, setAlertRules, editingRule, setEditingRule, showAlertRules,
 }: {
-  metrics: any; timeRange: TimeRange; setTimeRange: (r: TimeRange) => void;
+  metrics: SystemMetrics | null; timeRange: TimeRange; setTimeRange: (r: TimeRange) => void;
   displayData: MetricsPoint[]; chartColor: Record<string, string>;
-  containerRanking: any[];
+  containerRanking: Service[];
   alertRules: AlertRule[]; setAlertRules: React.Dispatch<React.SetStateAction<AlertRule[]>>;
   editingRule: Partial<AlertRule> | null; setEditingRule: React.Dispatch<React.SetStateAction<Partial<AlertRule> | null>>;
   showAlertRules: boolean;

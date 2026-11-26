@@ -1,5 +1,20 @@
 import client from './client'
 
+// Docker Engine /info 响应中本面板使用的字段
+export interface DockerInfo {
+  ServerVersion?: string
+  OperatingSystem?: string
+  Architecture?: string
+  NCPU?: number
+  MemTotal?: number
+  Driver?: string
+  DockerRootDir?: string
+  Name?: string
+  KernelVersion?: string
+  CgroupDriver?: string
+  LoggingDriver?: string
+}
+
 // Docker 容器列表
 export async function fetchContainers() {
   const { data } = await client.get('/docker/containers/json?all=true')
@@ -7,7 +22,7 @@ export async function fetchContainers() {
 }
 
 // Docker 系统信息
-export async function fetchDockerInfo(): Promise<{ data: any; apiVersion: string }> {
+export async function fetchDockerInfo(): Promise<{ data: DockerInfo; apiVersion: string }> {
   const res = await client.get('/docker/info')
   return { data: res.data, apiVersion: res.headers?.['api-version'] || res.headers?.['Api-Version'] || '-' }
 }
@@ -56,14 +71,6 @@ export async function removeContainer(id: string) {
   await client.delete(`/docker/containers/${id}?force=true`)
 }
 
-// 容器日志
-export async function fetchContainerLogs(id: string, tail = 200) {
-  const { data } = await client.get(`/docker/containers/${id}/logs?stdout=true&stderr=true&tail=${tail}`, {
-    responseType: 'arraybuffer',
-  })
-  return data
-}
-
 // 网络列表
 export async function fetchNetworks() {
   const { data } = await client.get('/docker/networks')
@@ -103,11 +110,6 @@ export async function fetchContainerStats(id: string) {
   return data
 }
 
-// 重命名容器
-export async function renameContainer(id: string, name: string) {
-  await client.post(`/docker/containers/${id}/rename?name=${encodeURIComponent(name)}`)
-}
-
 // ========== 镜像操作 ==========
 
 // 删除镜像
@@ -128,12 +130,6 @@ export async function pruneImages(allUnused = false) {
   const { data } = await client.post('/docker/images/prune', null, {
     params: allUnused ? { filters: '{"dangling":["false"]}' } : undefined,
   })
-  return data
-}
-
-// 镜像历史
-export async function fetchImageHistory(id: string) {
-  const { data } = await client.get(`/docker/images/${encodeURIComponent(id)}/history`)
   return data
 }
 
@@ -180,16 +176,6 @@ export async function pruneNetworks() {
   return data
 }
 
-// 连接容器到网络
-export async function connectToNetwork(networkId: string, containerId: string) {
-  await client.post(`/docker/networks/${networkId}/connect`, { Container: containerId })
-}
-
-// 断开容器从网络
-export async function disconnectFromNetwork(networkId: string, containerId: string) {
-  await client.post(`/docker/networks/${networkId}/disconnect`, { Container: containerId })
-}
-
 // ========== 卷操作 ==========
 
 // 创建卷
@@ -219,12 +205,6 @@ export async function pruneVolumes() {
 // 检查单个容器镜像更新
 export async function checkContainerUpdate(id: string) {
   const { data } = await client.get(`/api/containers/${id}/check-update`)
-  return data
-}
-
-// 批量检查所有运行中容器
-export async function checkAllContainerUpdates() {
-  const { data } = await client.get('/api/containers/check-updates')
   return data
 }
 

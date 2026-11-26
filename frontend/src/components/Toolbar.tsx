@@ -91,7 +91,7 @@ export default function Toolbar({ searchQuery, onSearchChange, onProjectCreated,
 
   const handleCreate = async (start: boolean) => {
     if (!projectName.trim() || !composeContent.trim()) {
-      setCreateError('请填写项目名称和 Compose 内容')
+      setCreateError(t('toolbar.nameRequired'))
       return
     }
     setCreating(true)
@@ -107,7 +107,7 @@ export default function Toolbar({ searchQuery, onSearchChange, onProjectCreated,
         })
         const data = await resp.json()
         if (!resp.ok) {
-          const msg = data.warnings?.length ? data.warnings.join('\n') : (data.error || '创建失败')
+          const msg = data.warnings?.length ? data.warnings.join('\n') : (data.error || t('toolbar.createFailed'))
           setToast({ msg, type: 'error' })
           setCreating(false)
           return
@@ -118,7 +118,7 @@ export default function Toolbar({ searchQuery, onSearchChange, onProjectCreated,
         setComposeContent('')
         setSelectedTemplate(null)
         setShowTemplateSelect(false)
-      } catch (e: any) { setCreateError(e.message) }
+      } catch (e: unknown) { setCreateError((e as Error).message) }
       finally { setCreating(false) }
       return
     }
@@ -135,7 +135,7 @@ export default function Toolbar({ searchQuery, onSearchChange, onProjectCreated,
       })
       if (!resp.ok) {
         const data = await resp.json().catch(() => ({}))
-        setToast({ msg: data.error || '创建失败', type: 'error' })
+        setToast({ msg: data.error || t('toolbar.createFailed'), type: 'error' })
         setStreamProgress(0)
         setStreamLogs([])
         setShowStreamLogs(false)
@@ -172,7 +172,7 @@ export default function Toolbar({ searchQuery, onSearchChange, onProjectCreated,
                 setShowTemplateSelect(false)
               }, 800)
             } else if (msg.type === 'all-error') {
-              setCreateError(msg.message || '启动失败')
+              setCreateError(msg.message || t('toolbar.startFailed'))
               setStreamProgress(0)
               setStreamLogs([])
               setShowStreamLogs(false)
@@ -180,8 +180,8 @@ export default function Toolbar({ searchQuery, onSearchChange, onProjectCreated,
           } catch { /* skip invalid JSON */ }
         }
       }
-    } catch (e: any) {
-      setCreateError(e.message)
+    } catch (e: unknown) {
+      setCreateError((e as Error).message)
       setStreamProgress(0)
       setStreamLogs([])
       setShowStreamLogs(false)
@@ -362,8 +362,7 @@ export default function Toolbar({ searchQuery, onSearchChange, onProjectCreated,
                 )}
 
                 <div className="text-xs text-textMuted shrink-0">
-                  提示：项目将创建在 <code className="text-accent bg-accent/10 px-1 rounded">/projects/{projectName || '...'}</code> 目录下。
-                  「创建并启动」会自动执行 <code className="text-accent bg-accent/10 px-1 rounded">docker compose up -d</code>。
+                  {t('toolbar.hintText', { name: projectName || '...' })}
                 </div>
               </div>
             )}
@@ -376,12 +375,12 @@ export default function Toolbar({ searchQuery, onSearchChange, onProjectCreated,
                   <div className="flex items-center justify-between text-xs">
                     <span className="text-textSecondary">
                       {streamProgress < 50
-                        ? '正在创建项目...'
+                        ? t('toolbar.stepCreating')
                         : streamProgress < 80
-                        ? '正在启动服务...'
+                        ? t('toolbar.stepStarting')
                         : streamProgress < 100
-                        ? '正在验证服务...'
-                        : '创建完成'}
+                        ? t('toolbar.stepVerifying')
+                        : t('toolbar.stepDone')}
                     </span>
                     <span className="text-textMuted font-mono">{streamProgress}%</span>
                   </div>
@@ -403,7 +402,7 @@ export default function Toolbar({ searchQuery, onSearchChange, onProjectCreated,
                   className="flex items-center gap-1 text-xs text-textMuted hover:text-textPrimary transition-colors"
                 >
                   <Terminal className="w-3 h-3" />
-                  <span>日志输出</span>
+                  <span>{t('update.showLogs')}</span>
                   {showStreamLogs ? <ChevronUp className="w-3 h-3" /> : <ChevronDown className="w-3 h-3" />}
                 </button>
 
@@ -411,7 +410,7 @@ export default function Toolbar({ searchQuery, onSearchChange, onProjectCreated,
                 {showStreamLogs && (
                   <div className="bg-black/90 text-green-400 rounded-lg p-3 text-xs font-mono h-32 overflow-y-auto">
                     {streamLogs.length === 0 ? (
-                      <span className="text-textMuted">等待输出...</span>
+                      <span className="text-textMuted">{t('update.waitingLogs')}</span>
                     ) : (
                       streamLogs.map((log, i) => (
                         <div key={i} className={`leading-relaxed whitespace-pre-wrap break-all ${

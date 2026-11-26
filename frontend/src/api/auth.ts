@@ -36,9 +36,3 @@ export async function changePassword(oldPassword: string, newPassword: string): 
 export async function updatePreferences(preferences: Record<string, unknown>): Promise<void> {
   await client.put('/auth/prefs', preferences)
 }
-
-// 获取偏好设置
-export async function getPreferences(): Promise<Record<string, unknown>> {
-  const { data } = await client.get('/auth/prefs')
-  return data
-}

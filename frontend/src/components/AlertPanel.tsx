@@ -49,7 +49,7 @@ export default function AlertPanel({ alerts }: AlertPanelProps) {
         <button
           onClick={handleDismiss}
           className="p-1 rounded hover:bg-border/50 text-textMuted hover:text-textPrimary transition-colors shrink-0"
-          title="关闭"
+          title={t('alert.close')}
         >
           <X className="w-4 h-4" />
         </button>

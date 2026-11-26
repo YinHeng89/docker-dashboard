@@ -10,7 +10,27 @@
     "langLabelZh": "CN",
     "langLabelEn": "EN",
     "logout": "Logout",
-    "settings": "Settings"
+    "settings": "Settings",
+    "checking": "Checking...",
+    "updatesAvailable": "{{count}} updates available",
+    "noUpdates": "No updates",
+    "foundUpdates": "{{count}} updates found",
+    "clear": "Clear",
+    "checkNow": "Check now",
+    "noCheckRecords": "No check records yet. Click \"Check now\" to start",
+    "canUpdate": "Update available",
+    "upToDate": "Up to date",
+    "autoCheckInterval": "Auto-check interval: every {{hours}} hours",
+    "autoCheckOff": "Auto-check disabled"
+  },
+  "notification": {
+    "containerStarted": "Container started",
+    "containerStopped": "Container stopped",
+    "containerKilled": "Container killed",
+    "containerPaused": "Container paused",
+    "containerUnpaused": "Container resumed",
+    "containerRemoved": "Container removed",
+    "clearAll": "Clear all ({{count}})"
   },
   "nav": {
     "dashboard": "Dashboard",
@@ -57,7 +77,15 @@
     "envFile": ".env Environment Variables",
     "envConfigured": "Configured",
     "envPlaceholder": "DB_PASSWORD=secret\nAPI_KEY=xxxxx\nNODE_ENV=production",
-    "envHint": "Environment variables file. ${VAR} in Compose file will read from here. Docker Compose auto-loads .env from project directory."
+    "envHint": "Environment variables file. ${VAR} in Compose file will read from here. Docker Compose auto-loads .env from project directory.",
+    "nameRequired": "Please enter a project name and Compose content",
+    "createFailed": "Creation failed",
+    "startFailed": "Startup failed",
+    "hintText": "Tip: the project will be created under /projects/{{name}}. \"Create and start\" runs docker compose up -d automatically.",
+    "stepCreating": "Creating project...",
+    "stepStarting": "Starting services...",
+    "stepVerifying": "Verifying services...",
+    "stepDone": "Creation complete"
   },
   "status": {
     "running": "Running",
@@ -68,7 +96,8 @@
   "alert": {
     "title": "Abnormal Services",
     "fixAll": "Fix All",
-    "restartAll": "Restart All"
+    "restartAll": "Restart All",
+    "close": "Close"
   },
   "charts": {
     "title": "Resource Monitor",
@@ -595,7 +624,13 @@
     "composeOnly": "Only Compose projects support updates",
     "self": "Self",
     "selfUpdate": "Manual update required",
-    "selfHint": "Updating self would interrupt the Dashboard"
+    "selfHint": "Updating self would interrupt the Dashboard",
+    "preparing": "Preparing update...",
+    "readStreamFailed": "Unable to read response stream",
+    "cancelled": "Update cancelled",
+    "failedWith": "Update failed: {{message}}",
+    "success": "Update complete",
+    "composeOnlyHint": "Only Compose projects can be updated"
   },
   "terminal": {
     "title": "Terminal",

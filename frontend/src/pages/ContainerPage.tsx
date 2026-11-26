@@ -88,14 +88,27 @@ export default function ContainerPage({
   const [updateResults, setUpdateResults] = useState<Record<string, ContainerUpdateResult>>({})
   const [checkingSingle, setCheckingSingle] = useState<Set<string>>(new Set())
 
+  // 后端自动检测结果的原始结构（snake_case）
+  interface AutoUpdateResultRow {
+    container_id: string
+    container_name: string
+    image_name: string
+    has_update: boolean
+    current_digest?: string
+    remote_digest?: string | null
+    status?: ContainerUpdateResult['status']
+    error?: string
+    message?: string
+  }
+
   // 从自动检测服务加载结果（全量回填，含已最新/失败/本地镜像等状态）
   useEffect(() => {
     fetch('/api/auto-update/status')
       .then(r => r.json())
       .then(data => {
-        const results = (data.results || []) as any[]
+        const results = (data.results || []) as AutoUpdateResultRow[]
         const merged: Record<string, ContainerUpdateResult> = {}
-        results.forEach((r: any) => {
+        results.forEach(r => {
           if (r.has_update) {
             merged[r.container_id] = {
               containerId: r.container_id,
@@ -115,14 +128,14 @@ export default function ContainerPage({
               hasUpdate: false,
               currentDigest: r.current_digest,
               remoteDigest: r.remote_digest,
-              status: (r.status as any) || 'up_to_date',
+              status: r.status || 'up_to_date',
               error: r.error || undefined,
-              message: (r as any).message || undefined,
+              message: r.message || undefined,
             }
           }
         })
         // 先删除所有旧记录，再合并新记录（避免旧的可更新标记残留）
-        const allIds = new Set(results.map((r: any) => r.container_id))
+        const allIds = new Set(results.map(r => r.container_id))
         setUpdateResults(prev => {
           const next = { ...prev }
           for (const id of allIds) delete next[id]
@@ -347,8 +360,8 @@ export default function ContainerPage({
           } catch { /* skip */ }
         }
       }
-    } catch (e: any) {
-      error(e.message || t('containers.updateFailed'))
+    } catch (e: unknown) {
+      error((e as Error).message || t('containers.updateFailed'))
       setUpdatingContainer(null)
     }
   }

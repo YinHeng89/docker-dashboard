@@ -40,6 +40,12 @@ interface LogEntry {
   stream: 'stdout' | 'stderr'
 }
 
+type UpdateStreamMessage =
+  | { type: 'step'; container: string; step: string; message?: string; percent?: number }
+  | { type: 'log'; container?: string; message: string; stream?: 'stdout' | 'stderr' }
+  | { type: 'all-done'; message?: string }
+  | { type: 'all-error'; message?: string }
+
 export default function UpdateModal({
   service, isCompose, isManaged, projectDirName, onClose, onRefresh,
 }: UpdateModalProps) {
@@ -51,7 +57,7 @@ export default function UpdateModal({
     containerId: c.id,
     containerName: c.name,
     image: '',
-    composeService: (c as any).composeService,
+    composeService: c.composeService,
   }))
 
   // 每行状态
@@ -104,8 +110,8 @@ export default function UpdateModal({
       } else {
         setRowStates(prev => ({ ...prev, [id]: { state: 'upToDate', result } }))
       }
-    } catch (e: any) {
-      setRowStates(prev => ({ ...prev, [id]: { state: 'error', error: e.message } }))
+    } catch (e: unknown) {
+      setRowStates(prev => ({ ...prev, [id]: { state: 'error', error: (e as Error).message } }))
       showError(t('containers.updateError'))
     }
   }
@@ -132,7 +138,7 @@ export default function UpdateModal({
 
     setIsUpdating(true)
     setOverallProgress(0)
-    setOverallMessage('准备更新...')
+    setOverallMessage(t('update.preparing'))
     setLogs([])
 
     const newStates = { ...rowStates }
@@ -166,7 +172,7 @@ export default function UpdateModal({
       }
 
       const reader = response.body?.getReader()
-      if (!reader) throw new Error('无法读取响应流')
+      if (!reader) throw new Error(t('update.readStreamFailed'))
 
       const decoder = new TextDecoder()
       let buffer = ''
@@ -183,16 +189,16 @@ export default function UpdateModal({
           if (!line.trim()) continue
           try {
             const msg = JSON.parse(line)
-            handleProgressMessage(msg)
+            handleProgressMessage(msg as UpdateStreamMessage)
           } catch { /* skip invalid JSON */ }
         }
       }
-    } catch (e: any) {
-      if (e.name === 'AbortError') {
-        setOverallMessage('更新已取消')
+    } catch (e: unknown) {
+      if ((e as Error).name === 'AbortError') {
+        setOverallMessage(t('update.cancelled'))
       } else {
-        setOverallMessage(`更新失败: ${e.message}`)
-        showError(`更新失败: ${e.message}`)
+        setOverallMessage(t('update.failedWith', { message: (e as Error).message }))
+        showError(t('update.failedWith', { message: (e as Error).message }))
       }
     } finally {
       setIsUpdating(false)
@@ -202,7 +208,7 @@ export default function UpdateModal({
   }
 
   // 处理进度消息
-  const handleProgressMessage = useCallback((msg: any) => {
+  const handleProgressMessage = useCallback((msg: UpdateStreamMessage) => {
     switch (msg.type) {
       case 'step': {
         const { container, step, message, percent } = msg
@@ -243,12 +249,12 @@ export default function UpdateModal({
       }
       case 'all-done': {
         setOverallProgress(100)
-        setOverallMessage(msg.message || '更新完成')
+        setOverallMessage(msg.message || t('update.success'))
         success(t('containers.updateSuccess'))
         break
       }
       case 'all-error': {
-        setOverallMessage(msg.message || '更新失败')
+        setOverallMessage(msg.message || t('update.failed'))
         showError(msg.message || t('containers.updateFailed'))
         break
       }
@@ -392,7 +398,7 @@ export default function UpdateModal({
                     </button>
                   )}
                   {state === 'hasUpdate' && !isUpdating && !isManaged && (
-                    <span className="text-xs text-textMuted/70 px-3 py-1.5" title="仅支持 Compose 项目更新">
+                    <span className="text-xs text-textMuted/70 px-3 py-1.5" title={t('update.composeOnlyHint')}>
                       <ArrowUpCircle className="w-3.5 h-3.5 inline mr-1 text-warning/50" />
                       {t('update.composeOnly', '仅 Compose 项目支持更新')}
                     </span>

@@ -10,7 +10,27 @@
     "langLabelZh": "中文",
     "langLabelEn": "英文",
     "logout": "退出登录",
-    "settings": "系统设置"
+    "settings": "系统设置",
+    "checking": "检测中...",
+    "updatesAvailable": "{{count}} 个更新可用",
+    "noUpdates": "暂无更新",
+    "foundUpdates": "发现 {{count}} 个更新",
+    "clear": "清除",
+    "checkNow": "立即检测",
+    "noCheckRecords": "暂无检测记录，点击\"立即检测\"开始",
+    "canUpdate": "可更新",
+    "upToDate": "已最新",
+    "autoCheckInterval": "自动检测间隔：每 {{hours}} 小时",
+    "autoCheckOff": "自动检测已关闭"
+  },
+  "notification": {
+    "containerStarted": "容器已启动",
+    "containerStopped": "容器已停止",
+    "containerKilled": "容器被强制终止",
+    "containerPaused": "容器已暂停",
+    "containerUnpaused": "容器已恢复",
+    "containerRemoved": "容器被删除",
+    "clearAll": "清除全部 ({{count}})"
   },
   "nav": {
     "dashboard": "仪表盘",
@@ -57,7 +77,15 @@
     "envFile": ".env 环境变量",
     "envConfigured": "已配置",
     "envPlaceholder": "DB_PASSWORD=secret\nAPI_KEY=xxxxx\nNODE_ENV=production",
-    "envHint": "环境变量文件，Compose 文件中的 ${VAR} 会从此文件读取值。Docker Compose 会自动加载项目目录下的 .env 文件。"
+    "envHint": "环境变量文件，Compose 文件中的 ${VAR} 会从此文件读取值。Docker Compose 会自动加载项目目录下的 .env 文件。",
+    "nameRequired": "请填写项目名称和 Compose 内容",
+    "createFailed": "创建失败",
+    "startFailed": "启动失败",
+    "hintText": "提示：项目将创建在 /projects/{{name}} 目录下。「创建并启动」会自动执行 docker compose up -d。",
+    "stepCreating": "正在创建项目...",
+    "stepStarting": "正在启动服务...",
+    "stepVerifying": "正在验证服务...",
+    "stepDone": "创建完成"
   },
   "status": {
     "running": "运行中",
@@ -68,7 +96,8 @@
   "alert": {
     "title": "异常服务",
     "fixAll": "一键修复",
-    "restartAll": "重启全部"
+    "restartAll": "重启全部",
+    "close": "关闭"
   },
   "charts": {
     "title": "资源监控",
@@ -595,7 +624,13 @@
     "composeOnly": "仅 Compose 项目支持更新",
     "self": "自身",
     "selfUpdate": "需手动更新",
-    "selfHint": "更新自身容器会导致 Dashboard 中断"
+    "selfHint": "更新自身容器会导致 Dashboard 中断",
+    "preparing": "准备更新...",
+    "readStreamFailed": "无法读取响应流",
+    "cancelled": "更新已取消",
+    "failedWith": "更新失败: {{message}}",
+    "success": "更新完成",
+    "composeOnlyHint": "仅支持 Compose 项目更新"
   },
   "terminal": {
     "title": "终端",

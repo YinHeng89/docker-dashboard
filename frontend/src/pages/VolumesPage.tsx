@@ -34,7 +34,8 @@ export default function VolumesPage() {
     setLoading(true)
     try {
       const [volData, dfData] = await Promise.all([fetchVolumes(), fetchDockerSystemDf().catch(() => null)])
-      const volList = (volData as any)?.Volumes || (volData as VolumeSummary[]) || []
+      const volumeList = volData as VolumeSummary[] | { Volumes?: VolumeSummary[] }
+      const volList = Array.isArray(volumeList) ? volumeList : (volumeList.Volumes || [])
 
       // 从 system/df 获取准确的 Size 和 RefCount，合并到卷列表
       if (dfData) {

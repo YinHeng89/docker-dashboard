@@ -88,7 +88,7 @@ export default function ServiceCard({ service, managedProjects, onCardClick }: S
       const stderr = data.stderr || ''
       const hasStderrError = /failed|denied|permission\s+denied|conflict/i.test(stderr)
       if (data.success === false || !res.ok || hasStderrError) {
-        const errMsg = stderr || data.error || '操作失败'
+        const errMsg = stderr || data.error || t('common.operationFailed')
         setToast({ msg: errMsg, type: 'error' })
       } else {
         const actionLabels: Record<string, string> = {
@@ -96,8 +96,8 @@ export default function ServiceCard({ service, managedProjects, onCardClick }: S
         }
         setToast({ msg: actionLabels[action] || t('service.operationSuccess'), type: 'success' })
       }
-    } catch (e: any) {
-      setToast({ msg: e.message || t('service.operationFailed'), type: 'error' })
+    } catch (e: unknown) {
+      setToast({ msg: (e as Error).message || t('service.operationFailed'), type: 'error' })
     }
     setLoading(null)
   }
@@ -429,7 +429,7 @@ export default function ServiceCard({ service, managedProjects, onCardClick }: S
             <div className="flex-1 p-4 flex flex-col min-h-0">
               {editLoading ? (
                 <div className="flex items-center justify-center py-16 text-textMuted">
-                  <Loader2 className="w-5 h-5 animate-spin mr-2" /> 加载中...
+                  <Loader2 className="w-5 h-5 animate-spin mr-2" /> {t('common.loading')}
                 </div>
               ) : (
                 <YamlEditor value={editContent} onChange={setEditContent} rows={15} />

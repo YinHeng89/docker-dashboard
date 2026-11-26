@@ -44,13 +44,3 @@ export default function GroupHeader({
     </div>
   )
 }
-
-export function getGroupContainerIds(group: WorkspaceGroupedContainers): string[] {
-  const ids: string[] = []
-  for (const pg of group.projectGroups) {
-    for (const c of pg.containers) {
-      ids.push(c.id)
-    }
-  }
-  return ids
-}

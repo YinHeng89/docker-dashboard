@@ -5,6 +5,7 @@ import {
   Package, RotateCw, Power, Play, Square,
 } from 'lucide-react'
 import { connectLive } from '../api/ws'
+import { useTranslation } from 'react-i18next'
 
 export type NotificationType = 'success' | 'error' | 'info' | 'warning'
 export type NotificationAction = 'start' | 'stop' | 'restart' | 'remove' | 'create' | 'kill' | 'pause' | 'unpause'
@@ -17,6 +18,12 @@ interface Notification {
   action?: NotificationAction
   timestamp: number
   removing?: boolean
+}
+
+interface DockerEvent {
+  Type?: string
+  Action?: string
+  Actor?: { ID?: string; Attributes?: Record<string, string> }
 }
 
 interface NotificationContextType {
@@ -52,6 +59,7 @@ const actionIcons: Record<string, React.ElementType> = {
 const recentEvents = new Map<string, number>()
 
 export default function NotificationProvider({ children }: { children: React.ReactNode }) {
+  const { t } = useTranslation()
   const [notifications, setNotifications] = useState<Notification[]>([])
   const timersRef = useRef<Map<string, ReturnType<typeof setTimeout>>>(new Map())
 
@@ -95,8 +103,8 @@ export default function NotificationProvider({ children }: { children: React.Rea
   // WebSocket 实时事件通知（带防抖）
   useEffect(() => {
     const live = connectLive({
-      onDockerEvent: (event: any) => {
-        const ev = event as { Type?: string; Action?: string; Actor?: { ID?: string; Attributes?: Record<string, string> } }
+      onDockerEvent: (data) => {
+        const ev = data as DockerEvent
         const attrs = ev?.Actor?.Attributes || {}
         const name = attrs.name || ev?.Actor?.ID?.slice(0, 12) || 'unknown'
         const containerId = ev?.Actor?.ID || ''
@@ -111,35 +119,35 @@ export default function NotificationProvider({ children }: { children: React.Rea
         // 定期清理旧记录（超过60秒）
         if (recentEvents.size > 100) {
           const cutoff = now - 60000
-          for (const [k, t] of recentEvents) {
-            if (t < cutoff) recentEvents.delete(k)
+          for (const [key, ts] of recentEvents) {
+            if (ts < cutoff) recentEvents.delete(key)
           }
         }
 
         switch (ev?.Action) {
           case 'start':
-            addNotification('success', '容器已启动', name, 'start')
+            addNotification('success', t('notification.containerStarted'), name, 'start')
             break
           case 'die':
-            addNotification('warning', '容器已停止', name, 'stop')
+            addNotification('warning', t('notification.containerStopped'), name, 'stop')
             break
           case 'kill':
-            addNotification('error', '容器被强制终止', name, 'kill')
+            addNotification('error', t('notification.containerKilled'), name, 'kill')
             break
           case 'pause':
-            addNotification('info', '容器已暂停', name, 'pause')
+            addNotification('info', t('notification.containerPaused'), name, 'pause')
             break
           case 'unpause':
-            addNotification('success', '容器已恢复', name, 'unpause')
+            addNotification('success', t('notification.containerUnpaused'), name, 'unpause')
             break
           case 'destroy':
-            addNotification('warning', '容器被删除', name, 'remove')
+            addNotification('warning', t('notification.containerRemoved'), name, 'remove')
             break
         }
       },
     })
     return () => live.close()
-  }, [addNotification])
+  }, [addNotification, t])
 
   const ctx: NotificationContextType = {
     notify: addNotification,
@@ -165,7 +173,7 @@ export default function NotificationProvider({ children }: { children: React.Rea
                 className="flex items-center gap-1 px-2.5 py-1 text-xs text-textMuted bg-surface/90 border border-border/50 rounded-lg hover:text-textPrimary hover:border-border transition-colors backdrop-blur shadow-sm"
               >
                 <X className="w-3 h-3" />
-                清除全部 ({notifications.length})
+                {t('notification.clearAll', { count: notifications.length })}
               </button>
             </div>
           )}

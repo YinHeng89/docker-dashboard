@@ -12,6 +12,7 @@ export interface Container {
   memoryUnit: string
   uptime: string
   ports?: { private: number; public?: number; type: string }[]
+  composeService?: string
 }
 
 export interface Service {

@@ -59,7 +59,7 @@ export default function ImagesPage() {
       fetchContainers(),
     ]).then(([imgs, containers]) => {
       setImages(imgs as ImageSummary[])
-      const ids: string[] = (containers as any[]).map((c: any) => c.ImageID || '').filter(Boolean)
+      const ids: string[] = (containers as Array<{ ImageID?: string }>).map(c => c.ImageID || '').filter(Boolean)
       setContainerImageIds(ids)
     }).catch(() => {}).finally(() => setLoading(false))
   }

@@ -46,8 +46,8 @@ export default function LoginPage() {
       if (isSetup) await setupPassword(password)
       else await login(password)
       navigate('/', { replace: true })
-    } catch (err: any) {
-      const errMsg = err.response?.data?.error || ''
+    } catch (err: unknown) {
+      const errMsg = (err as { response?: { data?: { error?: string } } }).response?.data?.error || ''
       // 映射服务端中文错误到翻译 key
       const errorMap: Record<string, string> = {
         '密码错误': t('login.wrongPassword'),

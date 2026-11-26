@@ -13,6 +13,7 @@ function toContainer(c: DockerContainer): Container {
     memory: 0,
     memoryUnit: 'MB',
     uptime: parseUptime(c.Status),
+    composeService: c.Labels?.['com.docker.compose.service'],
   }
 }
 

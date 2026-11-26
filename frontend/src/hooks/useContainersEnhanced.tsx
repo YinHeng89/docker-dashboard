@@ -1,5 +1,5 @@
 import { useState, useEffect, useCallback, useMemo } from 'react'
-import { Box, Container } from 'lucide-react'
+import { Container } from 'lucide-react'
 import { fetchContainers, fetchContainerStats } from '../api/docker'
 import { connectLive } from '../api/ws'
 import type { ContainerDetailSummary, ContainerGroup, ServiceStatus, WorkspaceGroup, WorkspaceGroupedContainers } from '../types'
@@ -95,8 +95,6 @@ export function toSummary(c: DockerContainer): ContainerDetailSummary {
     labels: c.Labels || {},
   }
 }
-
-type GroupMode = 'project' | 'image' | 'status' | 'none'
 
 export function useContainersEnhanced(
   containerMetrics?: Record<string, { cpu: number; memory: number; memoryPercent?: number }>,
@@ -354,37 +352,6 @@ export function useContainersEnhanced(
     }
   }, [summaries])
 
-  // ===== 兼容旧的 groupMode（保留旧功能） =====
-  const [groupMode, setGroupMode] = useState<GroupMode>('none')
-  const groups = useMemo<ContainerGroup[]>(() => {
-    if (groupMode === 'none') return []
-    const map = new Map<string, ContainerDetailSummary[]>()
-    for (const c of sorted) {
-      let key: string
-      switch (groupMode) {
-        case 'project': key = c.project || '独立容器'; break
-        case 'image': key = c.image.split(':')[0] || 'unknown'; break
-        case 'status': key = c.status; break
-        default: key = '全部'
-      }
-      const arr = map.get(key) ?? []
-      arr.push(c)
-      map.set(key, arr)
-    }
-    const result: ContainerGroup[] = []
-    for (const [name, containers] of map) {
-      const statuses = containers.map(c => c.status)
-      let groupStatus: ServiceStatus = 'running'
-      if (statuses.some(s => s === 'error')) groupStatus = 'error'
-      else if (statuses.some(s => s === 'warning')) groupStatus = 'warning'
-      else if (statuses.every(s => s === 'stopped')) groupStatus = 'stopped'
-      let icon: React.ReactNode = <Box className="w-4 h-4" />
-      if (groupMode === 'project') icon = <Container className="w-4 h-4" />
-      result.push({ name, icon, containers, status: groupStatus, containerCount: containers.length })
-    }
-    return result
-  }, [sorted, groupMode])
-
   const fetchStats = useCallback(async (id: string) => {
     try { return await fetchContainerStats(id) }
     catch { return null }
@@ -392,14 +359,11 @@ export function useContainersEnhanced(
 
   return {
     containers: sorted,
-    groups,
     workspaceGrouped,
     stats,
     loading,
-    groupMode,
     sortKey,
     sortAsc,
-    setGroupMode,
     toggleSort,
     refresh,
     fetchStats,

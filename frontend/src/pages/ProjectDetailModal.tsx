@@ -113,7 +113,7 @@ export default function ProjectDetailModal({ containers, onClose }: Props) {
   }, [activeId])
 
   const loadProcesses = useCallback(async () => {
-    try { setProcesses(await fetchContainerProcesses(activeId) as any) } catch {}
+    try { setProcesses(await fetchContainerProcesses(activeId) as { Titles: string[]; Processes: string[][] }) } catch {}
   }, [activeId])
 
   useEffect(() => {
