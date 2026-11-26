@@ -306,20 +306,45 @@ export default function ContainerPage({
     }
   }
 
+  // Docker Compose v2 会去掉项目名中的连字符，双向标准化后匹配
+  const normalizeProject = (s: string) => s.toLowerCase().replace(/[^a-z0-9_]/g, '')
+
   const doUpdate = async (c: ContainerDetailSummary) => {
-    if (c.project) {
-      error(t('containers.composeUpdateHint', 'Compose 项目容器请通过"服务编排"页面更新'))
+    if (isSelf(c.id)) {
+      error(t('update.selfHint', '更新自身容器会导致 Dashboard 中断'))
       return
     }
+
+    // 面板管理的 Compose 项目 → 走 compose pull + up（与"服务编排"页一致）
+    // 外部 Compose / 独立容器 → 走单容器重建（保留 compose 标签，仍属原项目）
+    const projectDir = c.project
+      ? managedProjects.find(p => normalizeProject(p) === normalizeProject(c.project!))
+      : undefined
+    const isManagedCompose = !!projectDir
+
     setUpdatingContainer(c.id)
     setUpdateProgress(0)
     setUpdateLogs([])
     setShowUpdateLogs(false)
     try {
-      const resp = await fetch(`/api/containers/${c.id}/update-stream`, {
-        method: 'POST',
-        headers: { 'Content-Type': 'application/json' },
-      })
+      const resp = isManagedCompose
+        ? await fetch('/api/update/stream', {
+            method: 'POST',
+            headers: { 'Content-Type': 'application/json' },
+            body: JSON.stringify({
+              projectName: projectDir,
+              containers: [{
+                containerId: c.id,
+                containerName: c.name,
+                composeService: c.labels?.['com.docker.compose.service'],
+              }],
+            }),
+          })
+        : await fetch(`/api/containers/${c.id}/update-stream`, {
+            method: 'POST',
+            headers: { 'Content-Type': 'application/json' },
+          })
+
       if (!resp.ok) {
         const data = await resp.json().catch(() => ({}))
         error(data.error || t('containers.updateFailed'))
@@ -340,17 +365,22 @@ export default function ContainerPage({
           if (!line.trim()) continue
           try {
             const msg = JSON.parse(line)
-            if (msg.type === 'progress') {
-              setUpdateProgress(msg.percent || 0)
+            // 两条流共用：progress(单容器) / step(compose) 都会带 percent
+            if (msg.type === 'progress' || msg.type === 'step') {
+              if (msg.percent !== undefined) setUpdateProgress(msg.percent || 0)
             } else if (msg.type === 'log') {
-              setUpdateLogs(prev => [...prev.slice(-200), msg])
+              setUpdateLogs(prev => [...prev.slice(-200), {
+                stream: msg.stream || 'stdout',
+                message: msg.message || '',
+              }])
             } else if (msg.type === 'all-done') {
               setUpdateProgress(100)
-              success(t('containers.updateSuccess'))
+              success(msg.message || t('containers.updateSuccess'))
               setTimeout(() => {
                 setShowUpdateConfirm(null)
                 setUpdateResults(prev => { const n = { ...prev }; delete n[c.id]; return n })
                 setUpdatingContainer(null)
+                refreshManagedProjects()
                 refresh()
               }, 1000)
             } else if (msg.type === 'all-error') {
@@ -819,6 +849,18 @@ export default function ContainerPage({
               <AlertTriangle className="w-3.5 h-3.5 text-warning shrink-0 mt-0.5" />
               {t('containers.updateConfirmDesc')}
             </p>
+            {isSelf(showUpdateConfirm.id) ? (
+              <p className="text-xs text-error mb-4 flex items-center gap-1.5">
+                <AlertTriangle className="w-3.5 h-3.5 shrink-0" />
+                {t('update.selfHint', '更新自身容器会导致 Dashboard 中断')}
+              </p>
+            ) : showUpdateConfirm.project && managedProjects.some(p =>
+              normalizeProject(p) === normalizeProject(showUpdateConfirm.project!)) ? (
+              <p className="text-xs text-accent mb-4 flex items-center gap-1.5">
+                <Info className="w-3.5 h-3.5 shrink-0" />
+                {t('containers.composeDirectUpdate', '将使用 docker compose pull + up 更新此服务')}
+              </p>
+            ) : null}
 
             {/* 流式进度条 + 日志面板 */}
             {(updateProgress > 0 || updatingContainer) && (

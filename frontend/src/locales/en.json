@@ -222,7 +222,7 @@
     "latestDigest": "Latest Digest",
     "updateUnchecked": "Unchecked / Restricted",
     "cancel": "Cancel",
-    "composeUpdateHint": "Compose project containers should be updated via the \"Compose\" page",
+    "composeDirectUpdate": "Will use docker compose pull + up to update this service",
     "selfProtection": "Cannot operate self container",
     "loading": "Loading containers...",
     "manageGroups": "Manage Groups",

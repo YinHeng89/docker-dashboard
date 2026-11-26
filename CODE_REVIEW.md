@@ -251,3 +251,21 @@
 
 - [ ] M1-M7 按影响面排期
 - [ ] L1-L10 清理死代码、锁定依赖、升级 Node、同步文档与脚本
+
+---
+
+## 七、功能完善：容器页直接更新（2026-11-26）
+
+**问题**：容器页 `doUpdate()` 在前端硬拦截所有带 `com.docker.compose.project` 标签的容器，提示"请通过服务编排页面更新"，但服务编排页的 `/api/update/stream` 通道本身支持 Compose 更新——功能割裂。
+
+**修复**：
+| 场景 | 通道 | 说明 |
+|---|---|---|
+| 面板管理的 Compose 项目 | `POST /api/update/stream` | `docker compose pull + up`，与编排页一致，按 `composeService` label 精确定位服务 |
+| 外部 Compose / 独立容器 | `POST /api/containers/:id/update-stream` | 拉取镜像 + 重建容器，保留 compose 标签与健康检查等配置 |
+
+- 前端统一处理两种 NDJSON 消息（`step`/`progress` → 进度，`log` → 日志，`all-done`/`all-error` → 结果）；确认弹窗按场景显示更新模式提示。
+- 后端单容器通道新增自身容器保护；配置保真补全 `Healthcheck`、`StopSignal`、`DnsSearch`、`ShmSize`、`SecurityOpt` 等。
+- 更新自身容器在前端与后端双重拦截。
+
+**验证**：构建通过；实测管理项目走 compose 通道完成 `pull → recreate → start`（1/1 服务）；外部标签容器走重建通道成功且 compose 标签保留；自身容器返回 403 语义的 `all-error`；面板持续 healthy；测试夹具已清理。

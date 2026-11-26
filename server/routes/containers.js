@@ -1,6 +1,7 @@
 // ==================== 容器镜像更新重建 API ====================
 // 注意：镜像更新检测逻辑已统一到 routes/update.js，本文件仅保留容器重建功能
 const http = require('http');
+const { getSelfContainerId } = require('../lib/utils');
 
 // ---------- Docker socket 请求封装 ----------
 function dockerRequest(method, pathStr, body) {
@@ -145,6 +146,14 @@ async function handleUpdateStream(req, res) {
     res.write(JSON.stringify(data) + '\n');
   };
 
+  // 自身容器保护：重建自己会直接中断面板 API
+  const selfId = getSelfContainerId();
+  if (selfId && id.slice(0, 12) === selfId) {
+    send({ type: 'all-error', message: '自身容器需手动更新（重建会中断面板服务）' });
+    res.end();
+    return;
+  }
+
   try {
     // Step 1: 获取旧容器详情
     send({ type: 'progress', percent: 5, message: '正在获取容器配置...' });
@@ -190,8 +199,15 @@ async function handleUpdateStream(req, res) {
       User: old.Config?.User,
       Tty: old.Config?.Tty,
       OpenStdin: old.Config?.OpenStdin,
+      AttachStdout: old.Config?.AttachStdout,
+      AttachStderr: old.Config?.AttachStderr,
       ExposedPorts: old.Config?.ExposedPorts,
       Labels: old.Config?.Labels,
+      Healthcheck: old.Config?.Healthcheck,
+      StopSignal: old.Config?.StopSignal,
+      StopTimeout: old.Config?.StopTimeout,
+      Hostname: old.Config?.Hostname,
+      Domainname: old.Config?.Domainname,
       HostConfig: {
         NetworkMode: networkMode,
         RestartPolicy: hostConfig.RestartPolicy || { Name: 'no' },
@@ -205,10 +221,21 @@ async function handleUpdateStream(req, res) {
         AutoRemove: hostConfig.AutoRemove,
         ExtraHosts: hostConfig.ExtraHosts,
         Dns: hostConfig.Dns,
+        DnsSearch: hostConfig.DnsSearch,
+        DnsOptions: hostConfig.DnsOptions,
         VolumesFrom: hostConfig.VolumesFrom,
         CapAdd: hostConfig.CapAdd,
         CapDrop: hostConfig.CapDrop,
         Sysctls: hostConfig.Sysctls,
+        ShmSize: hostConfig.ShmSize,
+        PidMode: hostConfig.PidMode,
+        IpcMode: hostConfig.IpcMode,
+        UTSMode: hostConfig.UTSMode,
+        ReadonlyRootfs: hostConfig.ReadonlyRootfs,
+        SecurityOpt: hostConfig.SecurityOpt,
+        OomKillDisable: hostConfig.OomKillDisable,
+        Init: hostConfig.Init,
+        Runtime: hostConfig.Runtime,
       },
     };
     if (old.Mounts && old.Mounts.length > 0) {
