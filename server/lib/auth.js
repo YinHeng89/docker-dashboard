@@ -1,17 +1,31 @@
 // ==================== JWT 认证模块 ====================
 const jwt = require('jsonwebtoken');
+const crypto = require('crypto');
 
-// 生产环境 JWT_SECRET 必须通过环境变量设置，否则使用随机值
+// 未设置 JWT_SECRET 时每次启动使用随机值（重启后旧 token 自动失效）
 const JWT_SECRET = process.env.JWT_SECRET ||
-  'docker-dashboard-' + require('crypto').randomBytes(32).toString('hex');
+  'docker-dashboard-' + crypto.randomBytes(32).toString('hex');
 const JWT_EXPIRES_IN = '7d';
+const TOKEN_MAX_AGE = 7 * 24 * 60 * 60 * 1000;
+// HTTPS 反代部署时设置 COOKIE_SECURE=1，让浏览器只通过 HTTPS 回传 cookie
+const COOKIE_SECURE = process.env.COOKIE_SECURE === '1';
+
+function cookieOptions() {
+  return {
+    httpOnly: true,
+    maxAge: TOKEN_MAX_AGE,
+    sameSite: 'lax',
+    secure: COOKIE_SECURE,
+    path: '/',
+  };
+}
 
 /**
- * 生成 JWT token
+ * 生成 JWT token（ver 用于改密/登出所有设备后使旧 token 失效）
  */
 function generateToken(user) {
   return jwt.sign(
-    { id: user.id },
+    { id: user.id, ver: user.token_version || 0 },
     JWT_SECRET,
     { expiresIn: JWT_EXPIRES_IN }
   );
@@ -34,48 +48,12 @@ function parseCookies(cookieStr) {
   return cookies;
 }
 
-/**
- * 认证中间件
- * 优先从 httpOnly cookie 中读取 token，其次从 Authorization header
- */
-function authMiddleware(req, res, next) {
-  let token = null;
-
-  // 1. 从 httpOnly cookie 获取（最安全的方式）
-  const cookies = parseCookies(req.headers.cookie);
-  if (cookies.token) {
-    token = cookies.token;
-  }
-
-  // 2. 从 Authorization header 获取（向后兼容）
-  if (!token) {
-    const authHeader = req.headers.authorization;
-    if (authHeader && authHeader.startsWith('Bearer ')) {
-      token = authHeader.slice(7);
-    }
-  }
-
-  if (!token) {
-    return res.status(401).json({ error: '未登录，请先登录' });
-  }
-
-  try {
-    const decoded = jwt.verify(token, JWT_SECRET);
-    req.user = decoded;
-    next();
-  } catch (e) {
-    // 区分 token 过期和无效
-    const msg = e.name === 'TokenExpiredError'
-      ? '登录已过期，请重新登录'
-      : '认证无效，请重新登录';
-    return res.status(401).json({ error: msg });
-  }
-}
-
 module.exports = {
   JWT_SECRET,
   JWT_EXPIRES_IN,
+  TOKEN_MAX_AGE,
+  COOKIE_SECURE,
   generateToken,
-  authMiddleware,
+  cookieOptions,
   parseCookies,
 };

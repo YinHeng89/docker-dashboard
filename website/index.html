@@ -302,13 +302,13 @@
                             <li>
                                 <div class="qs-check-header">
                                     <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="#F59E0B" stroke-width="2.5" stroke-linecap="round" stroke-linejoin="round"><circle cx="12" cy="12" r="10"/><line x1="12" y1="8" x2="12" y2="12"/><line x1="12" y1="16" x2="12.01" y2="16"/></svg>
-                                    <span data-i18n="quickstart.s2_item2">将 <code>JWT_SECRET</code> 替换为一个随机字符串（生产环境务必修改）</span>
+                                    <span data-i18n="quickstart.s2_item2">先执行 <code>echo "JWT_SECRET=$(openssl rand -hex 32)" > .env</code>，compose 中只写 <code>${JWT_SECRET}</code>（不要写命令替换，Compose 不会执行）</span>
                                 </div>
                                 <div class="qs-check-code">
                                     <div class="code-diff">
                                         <div class="diff-context"><span class="code-keyword">environment</span>:</div>
                                         <div class="diff-remove"><span class="diff-mark">−</span>  - JWT_SECRET=<span class="code-placeholder">change-me-to-a-random-string</span></div>
-                                        <div class="diff-add"><span class="diff-mark">+</span>  - JWT_SECRET=<span class="code-keyword">$(openssl rand -base64 32)</span></div>
+                                        <div class="diff-add"><span class="diff-mark">+</span>  - JWT_SECRET=<span class="code-keyword">${JWT_SECRET}</span></div>
                                     </div>
                                 </div>
                             </li>
@@ -577,7 +577,7 @@
       - /proc:/host/proc:ro
       - /sys:/host/sys:ro
     environment:
-      - JWT_SECRET=${JWT_SECRET:-docker-dashboard-default-change-me}
+      - JWT_SECRET=${JWT_SECRET:?请先执行 echo &quot;JWT_SECRET=$(openssl rand -hex 32)&quot; > .env}
 
 volumes:
   dashboard-projects:
@@ -601,8 +601,8 @@ volumes:
       - /proc:/host/proc:ro
       - /sys:/host/sys:ro
     <span class="code-keyword">environment</span>:
-      <span class="code-comment"># 默认密钥，生产环境请修改</span>
-      - JWT_SECRET=<span class="code-keyword">${JWT_SECRET:-docker-dashboard-default-change-me}</span>
+      <span class="code-comment"># 先在 .env 中设置：echo "JWT_SECRET=$(openssl rand -hex 32)" > .env</span>
+      - JWT_SECRET=<span class="code-keyword">${JWT_SECRET:?JWT_SECRET 必须设置}</span>
 
 <span class="code-keyword">volumes</span>:
   <span class="code-keyword">dashboard-projects</span>:

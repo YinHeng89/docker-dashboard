@@ -27,30 +27,37 @@ function initTable() {
   try { execute('ALTER TABLE auto_update_results ADD COLUMN error TEXT'); } catch { /* already exists */ }
 }
 
-// ===== 偏好存取 =====
+// ===== 偏好存取（preferences 表，启动时由 db.js 幂等补列）=====
 function loadPreferences() {
   try {
-    const row = queryOne('SELECT preferences FROM users LIMIT 1');
-    if (row?.preferences) {
-      const prefs = JSON.parse(row.preferences);
-      if (prefs.autoUpdate) {
-        preferences.enabled = !!prefs.autoUpdate.enabled;
-        preferences.intervalHours = prefs.autoUpdate.intervalHours || 6;
+    const row = queryOne(
+      'SELECT auto_update_enabled, auto_update_interval_hours FROM preferences LIMIT 1'
+    );
+    if (row) {
+      preferences.enabled = !!row.auto_update_enabled;
+      const hours = Number(row.auto_update_interval_hours);
+      if (Number.isFinite(hours) && hours >= 1 && hours <= 24) {
+        preferences.intervalHours = hours;
       }
     }
-  } catch { /* ignore */ }
+  } catch (e) {
+    console.error(`[AutoUpdate] 读取偏好失败: ${e.message}`);
+  }
   console.log(`[AutoUpdate] 偏好: enabled=${preferences.enabled}, interval=${preferences.intervalHours}h`);
 }
 
 function savePreferences() {
-  try {
-    const row = queryOne('SELECT preferences FROM users LIMIT 1');
-    const current = row?.preferences ? JSON.parse(row.preferences) : {};
-    current.autoUpdate = preferences;
-    execute('UPDATE users SET preferences = ? WHERE id = (SELECT id FROM users LIMIT 1)', [
-      JSON.stringify(current),
-    ]);
-  } catch { /* ignore */ }
+  const user = queryOne('SELECT id FROM users LIMIT 1');
+  if (!user) throw new Error('系统尚未初始化，无法保存自动更新偏好');
+  execute(
+    `INSERT INTO preferences (user_id, auto_update_enabled, auto_update_interval_hours)
+     VALUES (?, ?, ?)
+     ON CONFLICT(user_id) DO UPDATE SET
+       auto_update_enabled = excluded.auto_update_enabled,
+       auto_update_interval_hours = excluded.auto_update_interval_hours,
+       updated_at = CURRENT_TIMESTAMP`,
+    [user.id, preferences.enabled ? 1 : 0, preferences.intervalHours]
+  );
 }
 
 // ===== 获取容器列表 =====

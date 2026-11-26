@@ -48,7 +48,7 @@ const LOCALE_EN = {
     "quickstart.s2_title": "Customize Configuration",
     "quickstart.s2_desc": "Modify the <code>3 key settings</code> marked below to match your environment",
     "quickstart.s2_item1": "Replace <code>/your/projects/path</code> with your host path for Compose projects",
-    "quickstart.s2_item2": "Replace <code>JWT_SECRET</code> with a random string (MUST change in production)",
+    "quickstart.s2_item2": "Run <code>echo \"JWT_SECRET=$(openssl rand -hex 32)\" > .env</code> first, then use only <code>${JWT_SECRET}</code> in compose (Compose does not evaluate shell substitutions)",
     "quickstart.s2_item3": "Replace <code>/your/data/path</code> with your desired data storage path",
     "quickstart.s3_title": "Pull & Start",
     "quickstart.s3_desc": "Pull the image from Docker Hub and launch — supports amd64 and arm64",

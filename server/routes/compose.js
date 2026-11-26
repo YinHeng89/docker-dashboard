@@ -4,17 +4,30 @@ const { spawn } = require('child_process');
 const path = require('path');
 const yaml = require('js-yaml');
 const {
-  PROJECTS_DIR, isSelfComposeProject, safePath, validateYaml, ensureDir, readFile, writeFile, exists, listDir, isRelativePathSupported, extractComposeError
+  PROJECTS_DIR, isSelfComposeProject, safePath, validateProjectName, validateYaml, ensureDir, readFile, writeFile, exists, listDir, isRelativePathSupported, extractComposeError
 } = require('../lib/utils');
 
 const router = express.Router();
+
+// 所有 :name 路由统一校验项目名，避免各处 safePath 行为不一致
+router.param('name', (req, res, next, name) => {
+  try {
+    validateProjectName(name);
+    next();
+  } catch (e) {
+    res.status(400).json({ error: e.message });
+  }
+});
 
 // 自我保护中间件：阻止对包含自身容器的 compose 项目执行危险操作
 async function selfProtect(req, res, next) {
   try {
     const projectName = req.params.name;
     const dangerousOps = ['stop', 'restart', 'rebuild', 'delete', 'down'];
-    const action = req.path.split('/').pop();
+    // router.use('/:name') 会剥离前缀：DELETE /projects/:name 的 req.path 是 '/'
+    // → 必须按 HTTP 方法识别删除操作，否则删除自身项目可绕过保护。
+    const segment = req.path.split('/').filter(Boolean).pop() || '';
+    const action = req.method === 'DELETE' ? 'delete' : segment;
     if (dangerousOps.includes(action) && await isSelfComposeProject(projectName)) {
       console.warn(`[compose] 自我保护：拒绝操作 ${projectName} (action=${action})`);
       return res.status(403).json({ error: '不允许操作自身所在项目，这会中断 Dashboard 服务' });
@@ -64,12 +77,13 @@ async function runCompose(projectDir, args) {
       let stdout = '', stderrRaw = '';
       proc.stdout.on('data', d => stdout += d.toString());
       proc.stderr.on('data', d => stderrRaw += d.toString());
+      const timer = setTimeout(() => { proc.kill(); reject(new Error('命令执行超时')); }, 300000);
       proc.on('close', code => {
+        clearTimeout(timer);
         const stderr = extractComposeError(stderrRaw);
         resolve({ code, stdout, stderr });
       });
-      proc.on('error', reject);
-      setTimeout(() => { proc.kill(); reject(new Error('命令执行超时')); }, 300000);
+      proc.on('error', (err) => { clearTimeout(timer); reject(err); });
     } catch(e) {
       console.error('[runCompose] error:', e);
       reject(e);
@@ -205,9 +219,6 @@ router.post('/', async (req, res, next) => {
     name = name.toLowerCase();
 
     const projectDir = safePath(name);
-    if (await exists(projectDir)) {
-      return res.status(409).json({ error: `项目 ${name} 已存在` });
-    }
 
     // 校验 YAML
     const { warnings } = validateYaml(content);
@@ -220,8 +231,13 @@ router.post('/', async (req, res, next) => {
       });
     }
 
-    // 创建目录并写入 compose 文件
-    await ensureDir(projectDir);
+    // 原子创建目录：并发请求只有一个成功，消除 exists→mkdir 的 TOCTOU
+    try {
+      await fs.promises.mkdir(projectDir);
+    } catch (e) {
+      if (e.code === 'EEXIST') return res.status(409).json({ error: `项目 ${name} 已存在` });
+      throw e;
+    }
     await writeFile(path.join(projectDir, 'docker-compose.yml'), content);
 
     // 写入 .env 文件（如果提供）
@@ -813,9 +829,6 @@ async function handleCreateStream(req, res) {
   name = name.toLowerCase();
 
   const projectDir = safePath(name);
-  if (await exists(projectDir)) {
-    return res.status(409).json({ error: `项目 ${name} 已存在` });
-  }
 
   // 校验 YAML
   const { warnings } = validateYaml(content);
@@ -824,6 +837,14 @@ async function handleCreateStream(req, res) {
       error: `检测到相对路径卷挂载，当前部署不支持。`,
       warnings,
     });
+  }
+
+  // 原子创建目录：并发请求只有一个成功，消除 exists→mkdir 的 TOCTOU
+  try {
+    await fs.promises.mkdir(projectDir);
+  } catch (e) {
+    if (e.code === 'EEXIST') return res.status(409).json({ error: `项目 ${name} 已存在` });
+    return res.status(500).json({ error: `创建项目目录失败: ${e.message}` });
   }
 
   // NDJSON 响应头
@@ -840,9 +861,8 @@ async function handleCreateStream(req, res) {
   };
 
   try {
-    // Step 1: 创建目录和文件
+    // Step 1: 写入项目文件（目录已在响应头前原子创建）
     send({ type: 'progress', percent: 20, message: '正在创建项目文件...' });
-    await ensureDir(projectDir);
     await writeFile(path.join(projectDir, 'docker-compose.yml'), content);
 
     // 写入 .env 文件（如果提供）
@@ -882,7 +902,9 @@ async function handleCreateStream(req, res) {
     });
 
     await new Promise((resolve, reject) => {
+      const timer = setTimeout(() => { proc.kill(); reject(new Error('命令执行超时')); }, 300000);
       proc.on('close', (code) => {
+        clearTimeout(timer);
         if (code === 0) {
           send({ type: 'progress', percent: 80, message: '容器已启动，正在验证...' });
           resolve();
@@ -892,8 +914,7 @@ async function handleCreateStream(req, res) {
           reject(new Error(stderr || `compose 启动失败 (code ${code})`));
         }
       });
-      proc.on('error', reject);
-      setTimeout(() => { proc.kill(); reject(new Error('命令执行超时')); }, 300000);
+      proc.on('error', (err) => { clearTimeout(timer); reject(err); });
     });
 
     // Step 3: 验证服务（区分硬失败/软失败，软失败不销毁容器）
@@ -932,7 +953,9 @@ async function handleCreateStream(req, res) {
  * POST /projects/:name/action-stream — 流式执行 compose 操作（up/pull/restart/rebuild）
  */
 async function handleActionStream(req, res) {
-  const projectName = req.params.name;
+  let projectName;
+  try { projectName = validateProjectName(req.params.name); }
+  catch (e) { return res.status(400).json({ error: e.message }); }
   const { action } = req.body;
   const streamActions = ['up', 'pull', 'restart', 'rebuild'];
   if (!streamActions.includes(action)) {
@@ -1012,15 +1035,16 @@ async function handleActionStream(req, res) {
     });
 
     await new Promise((resolve, reject) => {
+      const timer = setTimeout(() => { proc.kill(); reject(new Error('命令执行超时')); }, 300000);
       proc.on('close', (code) => {
+        clearTimeout(timer);
         if (code === 0) resolve();
         else {
           const stderr = extractComposeError(stderrRaw);
           reject(new Error(stderr || `compose 退出码 ${code}`));
         }
       });
-      proc.on('error', reject);
-      setTimeout(() => { proc.kill(); reject(new Error('命令执行超时')); }, 300000);
+      proc.on('error', (err) => { clearTimeout(timer); reject(err); });
     });
 
     // 验证（仅 up/restart/rebuild 需要），区分硬失败/软失败

@@ -1,32 +1,26 @@
-# ===== 第一阶段：构建 React 前端 =====
+# ===== 阶段 1：构建 React 前端 =====
 FROM node:20-alpine AS react-builder
 WORKDIR /app
 COPY frontend/package*.json ./
-RUN npm install
+RUN npm ci
 COPY frontend/ ./
 RUN npm run build
 
-# ===== 第二阶段：Node.js 运行时（后端 + 前端静态文件） =====
-FROM node:18-alpine
-
-# 安装 Docker CLI 和编译工具（better-sqlite3 需要）
-RUN apk add --no-cache docker-cli docker-cli-compose python3 make g++
-
-# 创建项目和数据目录
-RUN mkdir -p /projects /data
-
+# ===== 阶段 2：编译后端依赖（better-sqlite3 原生模块需要编译工具） =====
+FROM node:20-alpine AS backend-builder
 WORKDIR /app/backend
-
-# 安装后端依赖
+RUN apk add --no-cache python3 make g++
 COPY server/package*.json ./
-RUN npm install --production
+RUN npm ci --omit=dev
 
-# 复制后端代码
+# ===== 阶段 3：运行时（不保留编译工具链） =====
+FROM node:20-alpine
+RUN apk add --no-cache docker-cli docker-cli-compose \
+  && mkdir -p /projects /data
+WORKDIR /app/backend
+COPY --from=backend-builder /app/backend/node_modules ./node_modules
 COPY server/ ./
-
-# 复制 React 构建产物到 public/（覆盖旧前端）
+# React 构建产物 → public/（server.js 用 express.static 提供）
 COPY --from=react-builder /app/dist ./public
-
 EXPOSE 3000
-
 CMD ["node", "server.js"]

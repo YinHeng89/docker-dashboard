@@ -2,7 +2,7 @@
 const express = require('express');
 const bcrypt = require('bcryptjs');
 const { queryOne, execute } = require('../lib/db');
-const { generateToken } = require('../lib/auth');
+const { generateToken, cookieOptions } = require('../lib/auth');
 
 const router = express.Router();
 
@@ -49,11 +49,7 @@ router.post('/setup', async (req, res, next) => {
     const token = generateToken(user);
 
     // 设置 cookie
-    res.cookie('token', token, {
-      httpOnly: true,
-      maxAge: 7 * 24 * 60 * 60 * 1000, // 7 天
-      sameSite: 'lax',
-    });
+    res.cookie('token', token, cookieOptions());
 
     res.json({ success: true });
   } catch (e) {
@@ -61,36 +57,65 @@ router.post('/setup', async (req, res, next) => {
   }
 });
 
-// 登录速率限制（内存实现，每个 IP 每分钟最多 10 次）
+// 登录限流：按 socket IP + 全局失败计数（不信任 X-Forwarded-For），
+// 含失败递增延迟与临时锁定，防止分布式爆破和代理头绕过。
 const loginAttempts = new Map();
-function checkLoginRateLimit(ip) {
-  const now = Date.now();
-  const windowMs = 60000;
-  const maxAttempts = 10;
-  const entry = loginAttempts.get(ip);
-  if (!entry || now > entry.resetAt) {
-    loginAttempts.set(ip, { count: 1, resetAt: now + windowMs });
-    return true;
-  }
-  if (entry.count >= maxAttempts) return false;
-  entry.count++;
-  return true;
+const globalLock = { failures: 0, lockedUntil: 0 };
+const MAX_FAILURES = 10;
+const LOCK_MS = 15 * 60 * 1000;
+const WINDOW_MS = 15 * 60 * 1000;
+
+function clientIp(req) {
+  return req.socket.remoteAddress || 'unknown';
 }
-// 每 5 分钟清理过期记录
-setInterval(() => {
+
+function checkRateLimit(ip) {
+  const now = Date.now();
+  const entry = loginAttempts.get(ip);
+  const until = Math.max(entry?.lockedUntil || 0, globalLock.lockedUntil);
+  if (until > now) {
+    return { allowed: false, retryAfter: Math.ceil((until - now) / 1000) };
+  }
+  return { allowed: true };
+}
+
+async function recordFailure(ip) {
+  const now = Date.now();
+  let entry = loginAttempts.get(ip);
+  if (!entry || now > entry.resetAt) entry = { failures: 0, resetAt: now + WINDOW_MS, lockedUntil: 0 };
+  entry.failures++;
+  globalLock.failures++;
+  if (entry.failures >= MAX_FAILURES) entry.lockedUntil = now + LOCK_MS;
+  if (globalLock.failures >= MAX_FAILURES * 3) globalLock.lockedUntil = now + LOCK_MS;
+  loginAttempts.set(ip, entry);
+  // 失败次数越多延迟越长（1~5 秒），拖慢自动化爆破
+  const delay = Math.min(5000, Math.max(0, entry.failures - 2) * 1000);
+  if (delay > 0) await new Promise(r => setTimeout(r, delay));
+}
+
+function recordSuccess(ip) {
+  loginAttempts.delete(ip);
+  globalLock.failures = 0;
+  globalLock.lockedUntil = 0;
+}
+
+const cleanupTimer = setInterval(() => {
   const now = Date.now();
   for (const [ip, entry] of loginAttempts) {
-    if (now > entry.resetAt) loginAttempts.delete(ip);
+    if (now > entry.resetAt && now > entry.lockedUntil) loginAttempts.delete(ip);
   }
+  if (globalLock.lockedUntil && now > globalLock.lockedUntil) globalLock.failures = 0;
 }, 300000);
+cleanupTimer.unref();
 
 // POST /auth/login — 登录
 router.post('/login', async (req, res, next) => {
   try {
-    // 速率限制
-    const ip = req.ip || req.socket.remoteAddress || 'unknown';
-    if (!checkLoginRateLimit(ip)) {
-      return res.status(429).json({ error: '登录尝试过于频繁，请 1 分钟后再试' });
+    // 速率限制（基于 socket IP，不信任客户端伪造的代理头）
+    const ip = clientIp(req);
+    const rate = checkRateLimit(ip);
+    if (!rate.allowed) {
+      return res.status(429).json({ error: `登录已临时锁定，请 ${Math.max(1, Math.ceil(rate.retryAfter / 60))} 分钟后再试` });
     }
 
     const { password } = req.body;
@@ -107,17 +132,15 @@ router.post('/login', async (req, res, next) => {
 
     const valid = await bcrypt.compare(password, user.password);
     if (!valid) {
+      await recordFailure(ip);
       return res.status(401).json({ error: '密码错误' });
     }
 
+    recordSuccess(ip);
     const token = generateToken(user);
 
     // 设置 cookie
-    res.cookie('token', token, {
-      httpOnly: true,
-      maxAge: 7 * 24 * 60 * 60 * 1000,
-      sameSite: 'lax',
-    });
+    res.cookie('token', token, cookieOptions());
 
     res.json({ success: true });
   } catch (e) {
@@ -127,6 +150,14 @@ router.post('/login', async (req, res, next) => {
 
 // POST /auth/logout — 登出
 router.post('/logout', (req, res) => {
+  res.clearCookie('token', { path: '/' });
+  res.json({ success: true });
+});
+
+// POST /auth/revoke-all — 递增 token 版本，吊销所有已签发会话（含当前）
+router.post('/revoke-all', (req, res) => {
+  if (!req.user) return res.status(401).json({ error: '未登录' });
+  execute('UPDATE users SET token_version = token_version + 1 WHERE id = ?', [req.user.id]);
   res.clearCookie('token', { path: '/' });
   res.json({ success: true });
 });
@@ -141,6 +172,8 @@ router.get('/me', (req, res) => {
   const prefs = queryOne('SELECT * FROM preferences WHERE user_id = ?', [user.id]);
 
   res.json({
+    username: 'admin',
+    configured: true,
     preferences: { cmdHistory: prefs ? JSON.parse(prefs.cmd_history || '[]') : [] },
   });
 });
@@ -171,9 +204,14 @@ router.put('/password', async (req, res, next) => {
       return res.status(401).json({ error: '旧密码错误' });
     }
 
-    // 更新密码
+    // 更新密码并递增 token 版本：其他设备的旧 token 立即失效，当前会话换发新 token
     const hashedPassword = await bcrypt.hash(newPassword, 10);
-    execute('UPDATE users SET password = ? WHERE id = ?', [hashedPassword, user.id]);
+    execute(
+      'UPDATE users SET password = ?, token_version = token_version + 1 WHERE id = ?',
+      [hashedPassword, user.id]
+    );
+    const updated = queryOne('SELECT id, token_version FROM users WHERE id = ?', [user.id]);
+    res.cookie('token', generateToken(updated), cookieOptions());
 
     res.json({ success: true });
   } catch (e) {

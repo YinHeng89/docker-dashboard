@@ -33,11 +33,21 @@
 - **响应式设计**：移动端自适应
 - **安全头**：XSS/点击劫持/MIME 嗅探防护
 
+### 权限边界（重要）
+
+- 本面板以读写方式挂载 `/var/run/docker.sock`，**任何已登录用户都等同于宿主机 Docker 管理员**（可创建特权容器挂载宿主机根目录）。请只部署在可信网络，不要直接暴露 8070 端口到公网。
+- 终端的“命令白名单”仅用于防止误操作，**不是安全隔离边界**：白名单包含 `sh/bash`，已登录用户本就拥有宿主机级权限。
+- 可选加固：
+  - `DOCKER_READONLY=1`：Docker API 代理只放行 GET/HEAD（面板写操作将不可用）。
+  - `COOKIE_SECURE=1`：仅在 HTTPS 反代场景启用，浏览器只通过 HTTPS 回传 cookie。
+  - 更严格的做法是改用 docker-socket-proxy 做 API 白名单。
+
 ## 快速开始
 
 ```bash
 git clone <repo-url> dashboard
 cd dashboard
+echo "JWT_SECRET=$(openssl rand -hex 32)" > .env   # 必须先设置，否则 compose 拒绝启动
 docker compose up -d
 ```
 
@@ -85,7 +95,7 @@ services:
       - /proc:/host/proc:ro
       - /sys:/host/sys:ro
     environment:
-      - JWT_SECRET=${JWT_SECRET:-docker-dashboard-please-change-this-secret}
+      - JWT_SECRET=${JWT_SECRET:?请先运行 echo "JWT_SECRET=$(openssl rand -hex 32)" > .env}
       - PROJECTS_DIR=${PWD}/config/projects
       - DB_DIR=${PWD}/config/data
 ```
@@ -95,9 +105,11 @@ services:
 | 变量 | 默认值 | 说明 |
 |---|---|---|
 | `PORT` | `3000` | Express 监听端口 |
-| `JWT_SECRET` | `docker-dashboard-please-change-this-secret` | JWT 签名密钥，**生产环境务必修改** |
+| `JWT_SECRET` | 无（必须设置） | JWT 签名密钥；未设置时 compose 拒绝启动，直接用 Node 运行则每次随机生成 |
 | `PROJECTS_DIR` | `/projects` | Compose 项目存储根目录 |
 | `DB_DIR` | `/data` | SQLite 数据库存储目录 |
+| `DOCKER_READONLY` | `0` | 设为 `1` 时 Docker API 代理仅允许 GET/HEAD |
+| `COOKIE_SECURE` | `0` | HTTPS 反代场景设为 `1`，为认证 cookie 添加 secure 标志 |
 
 ### 路径配置说明
 
@@ -189,7 +201,7 @@ Docker Events ──stream──> 自动刷新容器列表（300ms 防抖 + 指�
 | `POST /api/containers/:id/update` | `containers.js` | 独立容器更新重建 |
 | `POST /api/update/stream` | `update.js` | Compose 流式更新（NDJSON） |
 | `GET /api/containers/:id/workingdir` | 内联 | 容器工作目录（三层兜底） |
-| `POST /exec` | `exec.js` | 执行命令（白名单） |
+| `POST /exec` | `exec.js` | 执行命令（参数化 spawn + 白名单，非安全边界） |
 | `GET /projects` | `compose.js` | 列出所有 Compose 项目 |
 | `POST /projects/create` | `compose.js` | 创建项目 |
 | `PUT /projects/:name` | `compose.js` | 编辑项目 compose 文件 |
@@ -207,6 +219,14 @@ Docker Events ──stream──> 自动刷新容器列表（300ms 防抖 + 指�
 | `GET /docker/*` | 代理 | Docker API 透明代理（含 stats 格式转换） |
 | `WS /ws/exec` | `exec.js` | WebSocket 交互终端 |
 | `WS /ws/live` | 内联 | Docker 事件流 + 容器列表实时推送 |
+| `POST /projects/create-stream` | `compose.js` | 流式创建项目（NDJSON） |
+| `POST /projects/:name/action-stream` | `compose.js` | 流式 compose 操作（NDJSON） |
+| `PUT /auth/prefs` | `auth.js` | 保存命令历史偏好 |
+| `POST /auth/revoke-all` | `auth.js` | 递增 token 版本，吊销所有会话 |
+| `GET /api/auto-update/status` | `server.js` | 自动更新设置与检测结果 |
+| `PUT /api/auto-update/settings` | `server.js` | 保存自动更新设置 |
+| `POST /api/auto-update/check` / `clear` | `server.js` | 触发检测 / 清空结果 |
+| `GET /api/system/logs` | `log.service.js` | 系统日志缓冲 |
 
 ### 容器更新机制
 
@@ -385,3 +405,5 @@ docker compose up -d
 ## 发布镜像
 
 项目在 Docker Hub 上以 `yinheng1989/docker-dashboard` 发布，支持 `amd64` 和 `arm64` 架构。使用 `publish.sh` 脚本一键构建并推送。
+
+> 注意：`publish.sh` 与 `docker.sh` 含本机私有配置（如通知凭据），未纳入版本控制。从仓库克隆后需自行编写或在本地保留已有脚本；镜像构建与运行不依赖这两个脚本。

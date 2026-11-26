@@ -7,7 +7,7 @@ const path = require('path');
 const os = require('os');
 const fs = require('fs');
 const { PROJECTS_DIR, getSelfContainerId, ensureDir, initSamePathCheck, isRelativePathSupported } = require('./lib/utils');
-const { parseCookies, JWT_SECRET } = require('./lib/auth');
+const { parseCookies, JWT_SECRET, generateToken, cookieOptions } = require('./lib/auth');
 const { queryOne } = require('./lib/db');
 const jwt = require('jsonwebtoken');
 
@@ -96,28 +96,23 @@ app.use((req, res, next) => {
   try {
     req.user = jwt.verify(token, JWT_SECRET);
 
-    // 验证用户是否仍存在于数据库中（防止数据库被删除后旧 token 仍有效）
-    const dbUser = queryOne('SELECT id FROM users WHERE id = ?', [req.user.id]);
+    // 验证用户是否仍存在，并校验 token 版本（改密/登出所有设备后旧 token 立即失效）
+    const dbUser = queryOne('SELECT id, token_version FROM users WHERE id = ?', [req.user.id]);
     if (!dbUser) {
-      res.clearCookie('token');
+      res.clearCookie('token', { path: '/' });
       if (redirectOnAuthFail) return res.redirect('/login');
       return res.status(401).json({ error: '用户不存在，请重新登录' });
     }
+    if ((req.user.ver || 0) !== (dbUser.token_version || 0)) {
+      res.clearCookie('token', { path: '/' });
+      if (redirectOnAuthFail) return res.redirect('/login');
+      return res.status(401).json({ error: '会话已失效，请重新登录' });
+    }
 
-    // JWT 滑动过期：距离到期不到 1 天时自动续期
+    // JWT 滑动过期：距离到期不到 1 天时自动续期（保留 token 版本）
     const now = Math.floor(Date.now() / 1000);
     if (req.user.exp && (req.user.exp - now) < 86400) {
-      const newToken = jwt.sign(
-        { id: req.user.id },
-        JWT_SECRET,
-        { expiresIn: '7d' }
-      );
-      res.cookie('token', newToken, {
-        httpOnly: true,
-        maxAge: 7 * 24 * 60 * 60 * 1000,
-        sameSite: 'lax',
-        path: '/',
-      });
+      res.cookie('token', generateToken(dbUser), cookieOptions());
     }
 
     return next();
@@ -329,6 +324,11 @@ function transformStats(raw) {
 }
 
 app.use('/docker', (req, res) => {
+  // 可选只读模式：DOCKER_READONLY=1 时仅放行 GET/HEAD，防止误操作或会话劫持后创建特权容器
+  if (process.env.DOCKER_READONLY === '1' && !['GET', 'HEAD'].includes(req.method)) {
+    return res.status(403).json({ error: 'Docker 代理处于只读模式，写操作已被禁止' });
+  }
+
   const contentLength = parseInt(req.headers['content-length'], 10);
   if (contentLength > 50 * 1024 * 1024) {
     return res.status(413).json({ error: '请求体过大，最大 50MB' });
@@ -415,8 +415,12 @@ app.post('/api/auto-update/check', async (req, res) => {
 });
 app.put('/api/auto-update/settings', (req, res) => {
   const { enabled, intervalHours } = req.body;
-  autoUpdate.updateSettings(!!enabled, intervalHours || 6);
-  res.json({ success: true });
+  try {
+    autoUpdate.updateSettings(!!enabled, intervalHours || 6);
+    res.json({ success: true });
+  } catch (e) {
+    res.status(500).json({ error: `保存自动更新设置失败: ${e.message}` });
+  }
 });
 app.post('/api/auto-update/clear', (req, res) => {
   autoUpdate.clearResults();
@@ -542,9 +546,9 @@ function verifyWsAuth(req) {
     const cookies = parseCookies(req.headers.cookie);
     if (cookies.token) {
       const decoded = jwt.verify(cookies.token, JWT_SECRET);
-      // 验证用户是否仍存在于数据库中
-      const dbUser = queryOne('SELECT id FROM users WHERE id = ?', [decoded.id]);
-      if (dbUser) return true;
+      // 用户存在 + token 版本匹配（改密/登出所有设备后旧会话立即失效）
+      const dbUser = queryOne('SELECT id, token_version FROM users WHERE id = ?', [decoded.id]);
+      if (dbUser && (decoded.ver || 0) === (dbUser.token_version || 0)) return true;
     }
   } catch (_) {}
 
@@ -554,9 +558,8 @@ function verifyWsAuth(req) {
     const token = url.searchParams.get('token');
     if (token) {
       const decoded = jwt.verify(token, JWT_SECRET);
-      // 验证用户是否仍存在于数据库中
-      const dbUser = queryOne('SELECT id FROM users WHERE id = ?', [decoded.id]);
-      if (dbUser) return true;
+      const dbUser = queryOne('SELECT id, token_version FROM users WHERE id = ?', [decoded.id]);
+      if (dbUser && (decoded.ver || 0) === (dbUser.token_version || 0)) return true;
     }
   } catch (_) {}
 

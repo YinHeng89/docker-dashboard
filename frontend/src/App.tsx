@@ -42,21 +42,23 @@ export default function App() {
     }
     if (nav === 'dashboard' && (activeNav === 'compose' || activeNav === 'containers')) {
       refreshManagedProjects()
-      refreshContainers()
+      // 仪表盘卡片使用增强 hook 的数据源，必须刷新它而不是基础 hook
+      refreshEnhancedContainers()
     }
     setHighlightContainerId(highlightContainerId || null)
     localStorage.setItem('activeNav', nav)
     setActiveNav(nav)
   }
   const [searchQuery, setSearchQuery] = useState('')
-  const { metrics } = useSystemMetrics(10000)
-  const { services, refreshContainers } = useContainers(metrics?.containerMetrics)
+  // 使用用户在设置页保存的刷新间隔（秒）
+  const { metrics } = useSystemMetrics((Number(localStorage.getItem('refreshInterval')) || 10) * 1000)
+  const { services } = useContainers(metrics?.containerMetrics)
   const {
     groups, mappings, collapsed, favorites, showUngrouped, loading: groupsLoading,
     createGroup, deleteGroup, renameGroup, toggleShowOnDashboard, toggleShowUngrouped,
     assignToGroup, unassign, toggleFavorite, toggleCollapsed,
   } = useGroups()
-  const { workspaceGrouped, stats: enhancedStats } = useContainersEnhanced(metrics?.containerMetrics, groups, mappings, favorites)
+  const { workspaceGrouped, stats: enhancedStats, refresh: refreshEnhancedContainers } = useContainersEnhanced(metrics?.containerMetrics, groups, mappings, favorites)
   const [dashboardCollapsed, setDashboardCollapsed] = useState<Record<string, boolean>>({})
   const [managedProjects, setManagedProjects] = useState<string[]>([])
   const { scrollRef, anchorToggle } = useScrollAnchor()
@@ -225,7 +227,7 @@ export default function App() {
             </div>
 
             {/* 常用服务 */}
-            <Favorites services={services} />
+            <Favorites services={services} onSelect={(id) => handleNavChange('containers', id)} />
           </main>
         )}
       </div>

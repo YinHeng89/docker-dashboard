@@ -14,8 +14,18 @@ if (!fs.existsSync(DB_DIR)) {
 
 const db = new Database(DB_PATH);
 
-// 启用 WAL 模式（更好的并发性能）
+// 启用 WAL 模式（更好的并发性能）与外键约束（级联删除依赖它）
 db.pragma('journal_mode = WAL');
+db.pragma('foreign_keys = ON');
+
+// 幂等补列：旧数据库升级时补齐新增字段（CREATE TABLE IF NOT EXISTS 不会改旧表）
+function ensureColumn(table, column, definition) {
+  const columns = db.pragma(`table_info(${table})`).map(c => c.name);
+  if (!columns.includes(column)) {
+    db.exec(`ALTER TABLE ${table} ADD COLUMN ${column} ${definition}`);
+    console.log(`[DB] 补充列 ${table}.${column}`);
+  }
+}
 
 // ==================== 初始化表结构 ====================
 db.exec(`
@@ -59,6 +69,11 @@ db.exec(`
     updated_at DATETIME DEFAULT CURRENT_TIMESTAMP
   );
 `);
+
+// 旧库升级：补齐新增列（必须在建表之后）
+ensureColumn('users', 'token_version', 'INTEGER NOT NULL DEFAULT 0');
+ensureColumn('preferences', 'auto_update_enabled', 'INTEGER NOT NULL DEFAULT 0');
+ensureColumn('preferences', 'auto_update_interval_hours', 'INTEGER NOT NULL DEFAULT 6');
 
 // ==================== 执行数据库迁移 ====================
 runMigrations(db, path.join(__dirname, '..', 'migrations'));

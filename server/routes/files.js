@@ -106,7 +106,9 @@ router.get('/search', async (req, res, next) => {
       ], { timeout: 10000 });
       let stdout = '';
       proc.stdout.on('data', d => stdout += d.toString());
+      const timer = setTimeout(() => { proc.kill(); resolve(); }, 10000);
       proc.on('close', (code) => {
+        clearTimeout(timer);
         if (code <= 1 && stdout) {
           for (const line of stdout.trim().split('\n').filter(Boolean)) {
             const match = line.match(/^(.+?):(\d+):(.*)$/);
@@ -121,8 +123,7 @@ router.get('/search', async (req, res, next) => {
         }
         resolve();
       });
-      proc.on('error', () => resolve());
-      setTimeout(() => { proc.kill(); resolve(); }, 10000);
+      proc.on('error', () => { clearTimeout(timer); resolve(); });
     });
     res.json({ results: results.slice(0, 50) });
   } catch (e) {

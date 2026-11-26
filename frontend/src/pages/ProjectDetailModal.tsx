@@ -54,10 +54,8 @@ function formatBytes(bytes: number) {
 export default function ProjectDetailModal({ containers, onClose }: Props) {
   const { t } = useTranslation()
   const [activeId, setActiveId] = useState(containers[0]?.id || '')
-  const active = containers.find(c => c.id === activeId)!
+  const active = containers.find(c => c.id === activeId)
   const showList = containers.length > 1
-
-  if (!active) return null
 
   // ===== 容器详情状态 =====
   const [activeTab, setActiveTab] = useState<Tab>('info')
@@ -84,6 +82,7 @@ export default function ProjectDetailModal({ containers, onClose }: Props) {
 
   // 切换容器时重置状态
   useEffect(() => {
+    let cancelled = false
     setLoading(true)
     setDetail(null)
     setStats(null)
@@ -91,29 +90,31 @@ export default function ProjectDetailModal({ containers, onClose }: Props) {
     setLogs('')
     setResolvedWorkingDir(null)
     setActiveTab('info')
-    fetchContainer(active.id)
+    fetchContainer(activeId)
       .then(data => {
+        if (cancelled) return
         setDetail(data as ContainerDetail)
         // WorkingDir 为空时，调用兜底 API 解析
         const detail = data as ContainerDetail
         if (!detail.Config?.WorkingDir) {
-          fetch(`/api/containers/${active.id}/workingdir`)
+          fetch(`/api/containers/${activeId}/workingdir`)
             .then(r => r.json())
-            .then(d => setResolvedWorkingDir(d.workingDir))
+            .then(d => { if (!cancelled) setResolvedWorkingDir(d.workingDir) })
             .catch(() => {})
         }
       })
       .catch(() => {})
-      .finally(() => setLoading(false))
-  }, [active.id])
+      .finally(() => { if (!cancelled) setLoading(false) })
+    return () => { cancelled = true }
+  }, [activeId])
 
   const loadStats = useCallback(async () => {
-    try { setStats(await fetchContainerStats(active.id) as ContainerStats) } catch {}
-  }, [active.id])
+    try { setStats(await fetchContainerStats(activeId) as ContainerStats) } catch {}
+  }, [activeId])
 
   const loadProcesses = useCallback(async () => {
-    try { setProcesses(await fetchContainerProcesses(active.id) as any) } catch {}
-  }, [active.id])
+    try { setProcesses(await fetchContainerProcesses(activeId) as any) } catch {}
+  }, [activeId])
 
   useEffect(() => {
     if (activeTab === 'stats') loadStats()
@@ -138,7 +139,7 @@ export default function ProjectDetailModal({ containers, onClose }: Props) {
     const ws = new WebSocket(`${protocol}//${window.location.host}/ws/exec`)
     ws.onopen = () => {
       setLogsLoading(false)
-      ws.send(JSON.stringify({ type: 'exec', command: `docker logs --tail 200 -f ${active.id}`, t: Date.now() }))
+      ws.send(JSON.stringify({ type: 'exec', command: `docker logs --tail 200 -f ${activeId}`, t: Date.now() }))
     }
     ws.onmessage = (event) => {
       try { const msg = JSON.parse(event.data); if (msg.type === 'stdout' || msg.type === 'stderr') setLogs(prev => prev + (msg.data || '')) } catch {}
@@ -146,7 +147,7 @@ export default function ProjectDetailModal({ containers, onClose }: Props) {
     ws.onclose = () => setLogsLoading(false)
     ws.onerror = () => setLogsLoading(false)
     wsRef.current = ws
-  }, [active.id])
+  }, [activeId])
 
   useEffect(() => {
     if (activeTab !== 'logs') { if (wsRef.current) { wsRef.current.close(); wsRef.current = null }; setLogs(''); return }
@@ -167,6 +168,9 @@ export default function ProjectDetailModal({ containers, onClose }: Props) {
   }, [logsPaused, connectLogWs])
 
   const logLines = useMemo(() => logs.split('\n').map(l => l.replace(/\x1b\[[0-9;]*m/g, '')), [logs])
+
+  // 所有 Hook 执行完毕后再做空值判断，避免 Hook 数量变化导致组件崩溃
+  if (!active) return null
 
   const dot = statusDot[active.status] ?? statusDot.stopped
   const stText = statusTextC[active.status] ?? statusTextC.stopped
@@ -211,7 +215,7 @@ export default function ProjectDetailModal({ containers, onClose }: Props) {
                 <h3 className="text-sm font-semibold text-textPrimary truncate">{active.name}</h3>
                 <div className="flex items-center gap-2 mt-0.5">
                   <span className="text-[11px] text-textMuted font-mono">{active.shortId}</span>
-                  <button onClick={() => { const doCopy = () => { setCopied(true); setTimeout(() => setCopied(false), 1500) }; const txt = active.id; if (navigator.clipboard) { navigator.clipboard.writeText(txt).then(doCopy).catch(() => {}) } else { const ta = document.createElement('textarea'); ta.value = txt; ta.style.position = 'fixed'; ta.style.opacity = '0'; document.body.appendChild(ta); ta.select(); document.execCommand('copy'); document.body.removeChild(ta); doCopy() } }}
+                  <button onClick={() => { const doCopy = () => { setCopied(true); setTimeout(() => setCopied(false), 1500) }; const txt = activeId; if (navigator.clipboard) { navigator.clipboard.writeText(txt).then(doCopy).catch(() => {}) } else { const ta = document.createElement('textarea'); ta.value = txt; ta.style.position = 'fixed'; ta.style.opacity = '0'; document.body.appendChild(ta); ta.select(); document.execCommand('copy'); document.body.removeChild(ta); doCopy() } }}
                     className="p-0.5 hover:text-accent text-textMuted transition-colors shrink-0">
                     {copied ? <Check className="w-3 h-3 text-running" /> : <Copy className="w-3 h-3" />}
                   </button>

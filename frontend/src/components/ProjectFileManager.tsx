@@ -32,7 +32,9 @@ export default function ProjectFileManager({
   projectName, onBack, toolbarLeft, onComposeAction, composeActionLoading, minimal = false,
 }: ProjectFileManagerProps) {
   const { t } = useTranslation()
-  const API_BASE = ''
+  const encPath = (p: string) => p.split('/').map(encodeURIComponent).join('/')
+
+const API_BASE = ''
 
   // --- File list state ---
   const [projectFiles, setProjectFiles] = useState<FileEntry[]>([])
@@ -90,7 +92,7 @@ export default function ProjectFileManager({
     setFilesLoading(true)
     try {
       const pathQuery = subPath ? `${projectName}/${subPath}` : projectName
-      const res = await fetch(`${API_BASE}/files?path=${pathQuery}`)
+      const res = await fetch(`${API_BASE}/files?path=${encodeURIComponent(pathQuery)}`)
       const data = await res.json()
       setProjectFiles((data.entries || []) as FileEntry[])
       setFilesSubPath(subPath)
@@ -125,7 +127,7 @@ export default function ProjectFileManager({
       return
     }
     try {
-      const res = await fetch(`${API_BASE}/files/${fullPath}`)
+      const res = await fetch(`${API_BASE}/files/${encPath(fullPath)}`)
       const data = await res.json()
       if (data.type === 'directory') return
       // 拒绝大于 3MB 的文件
@@ -205,7 +207,7 @@ export default function ProjectFileManager({
     if (!currentEditingPath) return
     setSaving(true)
     try {
-      const res = await fetch(`${API_BASE}/files/${currentEditingPath}`, {
+      const res = await fetch(`${API_BASE}/files/${encPath(currentEditingPath)}`, {
         method: 'PUT',
         headers: { 'Content-Type': 'application/json' },
         body: JSON.stringify({ content: fileContent }),
@@ -231,7 +233,7 @@ export default function ProjectFileManager({
         if (file) formData.append('files', file)
       }
       const dirPath = filesSubPath ? `${projectName}/${filesSubPath}` : projectName
-      const res = await fetch(`${API_BASE}/files/upload?path=${dirPath}`, { method: 'POST', body: formData })
+      const res = await fetch(`${API_BASE}/files/upload?path=${encodeURIComponent(dirPath)}`, { method: 'POST', body: formData })
       const data = await res.json()
       if (data.success) {
         showToast(t('compose.uploadSuccess', { count: data.files?.length || fileList.length }))
@@ -267,7 +269,7 @@ export default function ProjectFileManager({
 
   const handleDelete = useCallback(async (fullPath: string, _isDir: boolean) => {
     try {
-      const res = await fetch(`${API_BASE}/files/${fullPath}`, { method: 'DELETE' })
+      const res = await fetch(`${API_BASE}/files/${encPath(fullPath)}`, { method: 'DELETE' })
       const data = await res.json()
       if (data.success) {
         showToast(t('compose.deleteSuccess'))
@@ -295,7 +297,7 @@ export default function ProjectFileManager({
     try {
       if (renameMode === 'newFile') {
         const fp = `${renameTarget}/${renameValue.trim()}`
-        const res = await fetch(`${API_BASE}/files/${fp}`, {
+        const res = await fetch(`${API_BASE}/files/${encPath(fp)}`, {
           method: 'PUT', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify({ content: '' }),
         })
         const data = await res.json()
@@ -336,7 +338,7 @@ export default function ProjectFileManager({
     if (!searchQuery.trim() || searchQuery.trim().length < 2) return
     setSearching(true); setShowSearch(true)
     try {
-      const res = await fetch(`${API_BASE}/files/search?path=${projectName}&query=${encodeURIComponent(searchQuery.trim())}`)
+      const res = await fetch(`${API_BASE}/files/search?path=${encodeURIComponent(projectName)}&query=${encodeURIComponent(searchQuery.trim())}`)
       const data = await res.json()
       setSearchResults(data.results || [])
     } catch { showToast(t('compose.searchFailed'), 'error') }
@@ -372,7 +374,7 @@ export default function ProjectFileManager({
     setActionLogs([])
     setShowActionLogs(false)
     try {
-      const resp = await fetch(`${API_BASE}/projects/${projectName}/action-stream`, {
+      const resp = await fetch(`${API_BASE}/projects/${encodeURIComponent(projectName)}/action-stream`, {
         method: 'POST',
         headers: { 'Content-Type': 'application/json' },
         body: JSON.stringify({ action }),

@@ -4,6 +4,11 @@ services:
     image: yinheng1989/docker-dashboard:latest
     container_name: docker-dashboard
     restart: unless-stopped
+    # 最小权限：容器需访问 docker.sock（等价于宿主机 root），禁用提权与多余能力
+    security_opt:
+      - no-new-privileges:true
+    cap_drop:
+      - ALL
     ports:
       - "8070:3000"
     volumes:
@@ -15,7 +20,7 @@ services:
       - /proc:/host/proc:ro
       - /sys:/host/sys:ro
     environment:
-      - JWT_SECRET=H/XCZzvPYuOQVyVVBuwHWwTYGPquqKMRQAm40Cqlnzg=
+      - JWT_SECRET=${JWT_SECRET:?请先在 .env 中设置 JWT_SECRET (可运行：openssl rand -hex 32)}
       - PROJECTS_DIR=/mnt/nvme01/appdata/docker
       - DB_DIR=/mnt/nvme01/appdata/docker-dashboard_data/data
     healthcheck:
@@ -40,4 +45,4 @@ services:
 #       - /proc:/host/proc:ro
 #       - /sys:/host/sys:ro
 #     environment:
-#       - JWT_SECRET=H/XCZzvPYuOQVyVVBuwHWwTYGPquqKMRQAm40Cqlnzg=
+#       - JWT_SECRET=${JWT_SECRET:?请先在 .env 中设置 JWT_SECRET (可运行：openssl rand -hex 32)}

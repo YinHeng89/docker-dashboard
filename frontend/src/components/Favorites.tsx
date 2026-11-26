@@ -1,12 +1,13 @@
 import { useTranslation } from 'react-i18next'
-import { Star, Plus } from 'lucide-react'
+import { Star } from 'lucide-react'
 import type { Service } from '../types'
 
 interface FavoritesProps {
   services: Service[]
+  onSelect?: (id: string) => void
 }
 
-export default function Favorites({ services }: FavoritesProps) {
+export default function Favorites({ services, onSelect }: FavoritesProps) {
   const { t } = useTranslation()
   const favs = services.filter((s) => s.favorites)
   if (favs.length === 0) return null
@@ -21,7 +22,7 @@ export default function Favorites({ services }: FavoritesProps) {
         {favs.map((s) => (
           <button
             key={s.id}
-            onClick={() => { /* TODO */ }}
+            onClick={() => onSelect?.(s.id)}
             className="flex items-center gap-1.5 px-3 py-1.5 rounded-md bg-border/40 text-xs text-textSecondary hover:text-textPrimary hover:bg-border/70 transition-colors"
           >
             <span className={`w-1.5 h-1.5 rounded-full ${
@@ -30,10 +31,6 @@ export default function Favorites({ services }: FavoritesProps) {
             {s.name}
           </button>
         ))}
-        <button className="flex items-center gap-1 px-3 py-1.5 rounded-md text-xs text-textMuted hover:text-textSecondary border border-dashed border-border/60 hover:border-border transition-colors">
-          <Plus className="w-3 h-3" />
-          {t('favorites.add')}
-        </button>
       </div>
     </div>
   )

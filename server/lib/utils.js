@@ -93,17 +93,42 @@ async function isSelfComposeProject(projectName) {
  * 校验路径安全性，防止目录遍历攻击
  * 返回安全的绝对路径，如果路径不安全则抛出错误
  */
+function isInsideProjects(target) {
+  const base = fsSync.realpathSync(PROJECTS_DIR);
+  return target === base || target.startsWith(base + path.sep);
+}
+
 function safePath(userPath) {
   // 清理用户输入
   const clean = path.normalize(userPath).replace(/^(\.\.[\/\\])+/, '');
   const resolved = path.resolve(PROJECTS_DIR, clean);
 
-  // 确保路径在 PROJECTS_DIR 内
-  if (!resolved.startsWith(PROJECTS_DIR + path.sep) && resolved !== PROJECTS_DIR) {
+  // 词法校验
+  if (!resolved.startsWith(path.resolve(PROJECTS_DIR) + path.sep) && resolved !== path.resolve(PROJECTS_DIR)) {
     throw new Error('非法路径：不允许访问项目目录之外的文件');
   }
 
+  // 符号链接校验：已存在的路径必须 realpath 后仍在项目目录内
+  if (fsSync.existsSync(resolved)) {
+    let real;
+    try { real = fsSync.realpathSync(resolved); }
+    catch { throw new Error('无法解析路径'); }
+    if (!isInsideProjects(real)) {
+      throw new Error('非法路径：符号链接指向项目目录之外');
+    }
+  }
+
   return resolved;
+}
+
+/**
+ * 校验项目名称格式（所有项目路由统一使用）
+ */
+function validateProjectName(name) {
+  if (typeof name !== 'string' || !/^[a-zA-Z0-9_][a-zA-Z0-9_-]{0,63}$/.test(name)) {
+    throw new Error('项目名称只能包含字母、数字、下划线和连字符，且不能以连字符开头');
+  }
+  return name;
 }
 
 /**
@@ -252,6 +277,7 @@ module.exports = {
   isSelfContainer,
   isSelfComposeProject,
   safePath,
+  validateProjectName,
   validateYaml,
   ensureDir,
   readFile,

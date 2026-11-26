@@ -1,4 +1,4 @@
-import { useState, useEffect } from 'react'
+import { useState, useEffect, useRef } from 'react'
 import { Bell, Maximize2, ArrowUpCircle, Loader2, X } from 'lucide-react'
 import { useTranslation } from 'react-i18next'
 import { useTheme } from '../hooks/useTheme'
@@ -51,6 +51,7 @@ export default function Header({ metrics: m, activeNav, onNavChange }: HeaderPro
   const [autoInterval, setAutoInterval] = useState(12)
   const [showDropdown, setShowDropdown] = useState(false)
   const [checking, setChecking] = useState(false)
+  const checkTimerRef = useRef<ReturnType<typeof setTimeout> | null>(null)
   const hasUpdates = updateResults.some(r => r.has_update === 1)
   const updateCount = updateResults.filter(r => r.has_update === 1).length
 
@@ -72,11 +73,16 @@ export default function Header({ metrics: m, activeNav, onNavChange }: HeaderPro
     return () => clearInterval(id)
   }, [])
 
+  useEffect(() => () => {
+    if (checkTimerRef.current) clearTimeout(checkTimerRef.current)
+  }, [])
+
   const handleCheck = async () => {
     setChecking(true)
     try {
       await fetch('/api/auto-update/check', { method: 'POST' })
-      setTimeout(async () => { await fetchUpdateStatus(); setChecking(false) }, 3000)
+      if (checkTimerRef.current) clearTimeout(checkTimerRef.current)
+      checkTimerRef.current = setTimeout(async () => { await fetchUpdateStatus(); setChecking(false) }, 3000)
     } catch { setChecking(false) }
   }
 

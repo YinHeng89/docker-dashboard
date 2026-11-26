@@ -17,10 +17,19 @@ const ANSI_COLORS: Record<string, string> = {
   '94': '#74c0fc', '95': '#b197fc', '96': '#63e6be', '97': '#fff',
 }
 
+function escapeHtml(text: unknown): string {
+  return String(text)
+    .replace(/&/g, '&amp;')
+    .replace(/</g, '&lt;')
+    .replace(/>/g, '&gt;')
+    .replace(/"/g, '&quot;')
+    .replace(/'/g, '&#39;')
+}
+
 function ansiToHtml(text: string): string {
   let html = ''
   let openSpans = 0
-  const escaped = text.replace(/&/g, '&amp;').replace(/</g, '&lt;').replace(/>/g, '&gt;')
+  const escaped = escapeHtml(text)
   const parts = escaped.split(/(\x1b\[[0-9;]*[A-Za-z])/)
   for (const part of parts) {
     const m = part.match(/^\x1b\[([0-9;]*)m/)
@@ -116,7 +125,7 @@ export default function TerminalModal({ containerName, onClose }: TerminalModalP
   }, [])
 
   const showHelp = useCallback(() => {
-    appendLine(`<span style="color:#58a6ff;font-size:13px;font-weight:600">${t('terminal.helpTitle')}</span>`, 'terminal-output')
+    appendLine(`<span style="color:#58a6ff;font-size:13px;font-weight:600">${escapeHtml(t('terminal.helpTitle'))}</span>`, 'terminal-output')
     appendLine('', 'terminal-empty')
     for (const [cmd, desc] of [
       ['docker ps', t('terminal.helpPs')], ['docker compose', t('terminal.helpCompose')],
@@ -124,10 +133,10 @@ export default function TerminalModal({ containerName, onClose }: TerminalModalP
       ['ps / top / df', t('terminal.helpSys')], ['sh / bash / ash', t('terminal.helpShell')],
       ['curl / wget / ping', t('terminal.helpNet')],
     ]) {
-      appendLine(`<span style="color:#e6edf3;min-width:140px;display:inline-block">${cmd}</span><span style="color:#8b949e">${desc}</span>`, 'terminal-output')
+      appendLine(`<span style="color:#e6edf3;min-width:140px;display:inline-block">${escapeHtml(cmd)}</span><span style="color:#8b949e">${escapeHtml(desc)}</span>`, 'terminal-output')
     }
     appendLine('', 'terminal-empty')
-    appendLine(`<span style="color:#6b7280">${t('terminal.hintBar')}</span>`, 'terminal-output')
+    appendLine(`<span style="color:#6b7280">${escapeHtml(t('terminal.hintBar'))}</span>`, 'terminal-output')
     appendLine('', 'terminal-empty')
   }, [appendLine])
 
@@ -145,7 +154,7 @@ export default function TerminalModal({ containerName, onClose }: TerminalModalP
     h.push(cmd); if (h.length > 50) h.shift()
     historyIdxRef.current = h.length; saveHistory(h)
 
-    appendLine(`<span style="color:#58a6ff">$ ${cmd}</span>`, 'terminal-cmd')
+    appendLine(`<span style="color:#58a6ff">$ ${escapeHtml(cmd)}</span>`, 'terminal-cmd')
     autoScrollRef.current = true
     setRunning(true)
 
@@ -184,23 +193,23 @@ export default function TerminalModal({ containerName, onClose }: TerminalModalP
     const ws = new WebSocket(`${protocol}//${window.location.host}/ws/exec`)
     wsRef.current = ws
 
-    ws.onopen = () => { appendLine(t('terminal.connected'), 'terminal-dim'); appendLine('', 'terminal-empty'); showHelp() }
+    ws.onopen = () => { appendLine(escapeHtml(t('terminal.connected')), 'terminal-dim'); appendLine('', 'terminal-empty'); showHelp() }
 
     ws.onmessage = (event: MessageEvent) => {
       try {
         const msg = JSON.parse(event.data as string)
         if (msg.type === 'stdout') appendRaw(ansiToHtml(msg.data as string))
-        else if (msg.type === 'stderr') appendRaw(`<span style="color:#e74c3c">${msg.data as string}</span>`)
-        else if (msg.type === 'exit') { setRunning(false); if (msg.code !== 0) appendLine(`[exit: ${msg.code}]`, 'terminal-dim'); appendLine('', 'terminal-empty') }
-        else if (msg.type === 'error') { setRunning(false); appendLine(`[${t('terminal.error')}: ${msg.data}]`, 'terminal-error'); appendLine('', 'terminal-empty') }
+        else if (msg.type === 'stderr') appendRaw(`<span style="color:#e74c3c">${ansiToHtml(msg.data as string)}</span>`)
+        else if (msg.type === 'exit') { setRunning(false); if (msg.code !== 0) appendLine(`[exit: ${escapeHtml(msg.code)}]`, 'terminal-dim'); appendLine('', 'terminal-empty') }
+        else if (msg.type === 'error') { setRunning(false); appendLine(`[${escapeHtml(t('terminal.error'))}: ${escapeHtml(msg.data)}]`, 'terminal-error'); appendLine('', 'terminal-empty') }
       } catch { /* ignore */ }
     }
 
-    ws.onclose = () => appendLine(`[${t('terminal.disconnected')}]`, 'terminal-dim')
-    ws.onerror = () => appendLine(`[${t('terminal.connectFailed')}]`, 'terminal-error')
+    ws.onclose = () => appendLine(`[${escapeHtml(t('terminal.disconnected'))}]`, 'terminal-dim')
+    ws.onerror = () => appendLine(`[${escapeHtml(t('terminal.connectFailed'))}]`, 'terminal-error')
 
-    setTimeout(() => inputRef.current?.focus(), 100)
-    return () => { ws.close(); wsRef.current = null }
+    const focusTimer = setTimeout(() => inputRef.current?.focus(), 100)
+    return () => { clearTimeout(focusTimer); ws.close(); wsRef.current = null }
   }, [appendLine, appendRaw, showHelp, setRunning])
 
   // ESC 关闭

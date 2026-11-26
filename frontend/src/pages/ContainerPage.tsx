@@ -69,7 +69,8 @@ export default function ContainerPage({
   const { t } = useTranslation()
   const { success, error } = useNotifications()
   const { isSelf } = useSelf()
-  const { metrics } = useSystemMetrics(10000)
+  // 使用用户在设置页保存的刷新间隔（秒）
+  const { metrics } = useSystemMetrics((Number(localStorage.getItem('refreshInterval')) || 10) * 1000)
 
   const {
     containers, workspaceGrouped, stats, loading,

@@ -1,4 +1,4 @@
-import { useState, useEffect, useMemo } from 'react'
+import { useState, useEffect, useMemo, Fragment } from 'react'
 import { createPortal } from 'react-dom'
 import { useTranslation } from 'react-i18next'
 import {
@@ -169,7 +169,7 @@ export default function NetworksPage() {
               const gateway = n.IPAM?.Config?.[0]?.Gateway || '-'
               const containerEntries = n.Containers ? Object.entries(n.Containers) : []
               return (
-                <>
+                <Fragment key={n.Id}>
                   <tr key={n.Id} className={`border-b border-border/50 ${isExpanded ? 'bg-panel/50' : 'hover:bg-panel/30'}`}>
                     <td className="px-2 py-2.5">
                       <button onClick={() => setExpandedNetwork(isExpanded ? null : n.Id)}
@@ -226,7 +226,7 @@ export default function NetworksPage() {
                       </td>
                     </tr>
                   )}
-                </>
+                </Fragment>
               )
             })}
           </tbody>

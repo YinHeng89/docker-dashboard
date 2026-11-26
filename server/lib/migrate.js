@@ -85,10 +85,8 @@ function shouldApplyMigration(db, version) {
           return false; // 表已存在，跳过
         } catch { return true; }
       },
-      '002_remove_username': () => {
-        const cols = db.prepare("PRAGMA table_info(users)").all();
-        return cols.some(c => c.name === 'username');
-      },
+      // 注：历史版本中的 002_remove_username、003_remove_registry_user_id
+      // 没有对应的迁移文件，相关检查已移除，避免死代码误导。
       '003_remove_favorites_group': () => {
         try {
           const row = db.prepare('SELECT id FROM container_groups WHERE id = ?').get('_favorites');
@@ -100,10 +98,6 @@ function shouldApplyMigration(db, version) {
           const cols = db.prepare("PRAGMA table_info(container_groups)").all();
           return !cols.some(c => c.name === 'show_on_dashboard');
         } catch { return false; }
-      },
-      '003_remove_registry_user_id': () => {
-        const cols = db.prepare("PRAGMA table_info(registry)").all();
-        return cols.some(c => c.name === 'user_id');
       },
     };
 

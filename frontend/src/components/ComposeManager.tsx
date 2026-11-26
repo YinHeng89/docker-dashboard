@@ -72,7 +72,7 @@ export default function ComposeManager() {
   const handleProjectRename = useCallback(async () => {
     if (!projectRenameTarget || !projectRenameValue.trim()) return
     try {
-      const res = await fetch(`${API_BASE}/projects/${projectRenameTarget}/rename`, {
+      const res = await fetch(`${API_BASE}/projects/${encodeURIComponent(projectRenameTarget)}/rename`, {
         method: 'POST', headers: { 'Content-Type': 'application/json' },
         body: JSON.stringify({ newName: projectRenameValue.trim() }),
       })
@@ -87,7 +87,7 @@ export default function ComposeManager() {
     const newName = prompt(t('compose.clone') + ':', `${name}-copy`)
     if (!newName) return
     try {
-      const res = await fetch(`${API_BASE}/projects/${name}/clone`, {
+      const res = await fetch(`${API_BASE}/projects/${encodeURIComponent(name)}/clone`, {
         method: 'POST', headers: { 'Content-Type': 'application/json' },
         body: JSON.stringify({ newName }),
       })
@@ -100,7 +100,7 @@ export default function ComposeManager() {
   const handleProjectDelete = useCallback(async (name: string) => {
     if (!window.confirm(t('compose.confirmDeleteProject', { name }))) return
     try {
-      const res = await fetch(`${API_BASE}/projects/${name}?removeFiles=true`, { method: 'DELETE' })
+      const res = await fetch(`${API_BASE}/projects/${encodeURIComponent(name)}?removeFiles=true`, { method: 'DELETE' })
       const data = await res.json().catch(() => ({}))
       if (data.success !== false && res.ok) {
         showToast(t('compose.deleteSuccess')); loadProjects()
@@ -116,7 +116,7 @@ export default function ComposeManager() {
     if (!selectedProject) return
     setActionLoading(action)
     try {
-      const res = await fetch(`${API_BASE}/projects/${selectedProject}/${action}`, { method: 'POST' })
+      const res = await fetch(`${API_BASE}/projects/${encodeURIComponent(selectedProject)}/${action}`, { method: 'POST' })
       const data = await res.json().catch(() => ({}))
       const stderr = data.stderr || ''
       const hasStderrError = /error|failed|denied|permission|conflict/i.test(stderr)

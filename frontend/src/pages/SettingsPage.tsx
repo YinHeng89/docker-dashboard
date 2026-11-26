@@ -85,46 +85,29 @@ export default function SettingsPage({ metrics, services }: { metrics: SystemMet
 
   // ===== 自动更新检测状态 =====
   const [updateState, setUpdateState] = useState<UpdateCheckState>('idle')
+  // 版本信息来源：后端 /api/system/info（由镜像构建时写入），不再前端伪造
   const [updateInfo, setUpdateInfo] = useState<UpdateInfo>({
-    currentVersion: '2.1.0',
-    latestVersion: '2.2.0',
-    releaseDate: '2026-06-20',
-    changelog: [
-      '新增系统日志中心功能',
-      '优化主题切换性能',
-      '修复容器状态检测问题',
-      '改进侧边栏响应式布局',
-      '更新依赖库至最新版本',
-    ],
+    currentVersion: '—',
+    latestVersion: '',
+    releaseDate: '',
+    changelog: [],
   })
   const [checkProgress, setCheckProgress] = useState(0)
 
-  const checkForUpdates = useCallback(() => {
+  const checkForUpdates = useCallback(async () => {
     setUpdateState('checking')
-    setCheckProgress(0)
-    const interval = setInterval(() => {
-      setCheckProgress(prev => {
-        const next = prev + Math.random() * 30
-        if (next >= 100) {
-          clearInterval(interval)
-          setTimeout(() => {
-            // 模拟：80% 概率有更新
-            const hasUpdate = Math.random() < 0.3
-            if (hasUpdate) {
-              setUpdateState('update_available')
-              setUpdateInfo(prev => ({
-                ...prev,
-                latestVersion: `${Math.floor(Math.random() * 5)}.${Math.floor(Math.random() * 10)}.${Math.floor(Math.random() * 20)}`,
-              }))
-            } else {
-              setUpdateState('up_to_date')
-            }
-          }, 500)
-          return 100
-        }
-        return next
-      })
-    }, 200)
+    setCheckProgress(30)
+    try {
+      const res = await fetch('/api/system/info')
+      if (!res.ok) throw new Error(String(res.status))
+      const info = await res.json()
+      setCheckProgress(100)
+      setUpdateInfo(prev => ({ ...prev, currentVersion: info.version || '—' }))
+      // 面板没有服务端版本目录，只能确认当前运行版本；升级通过重新拉取镜像完成
+      setUpdateState('up_to_date')
+    } catch {
+      setUpdateState('error')
+    }
   }, [])
 
   // ===== 系统日志状态（真实数据，来自服务端日志缓冲） =====
@@ -1052,7 +1035,7 @@ function PreferencesTab({
               </div>
               <div className="lang-group">
                 <span className="lang-label right">{t('settings.on')}</span>
-                <div className={`lang-track${autoUpdateEnabled ? '' : ' on'}`}
+                <div className={`lang-track${autoUpdateEnabled ? ' on' : ''}`}
                   onClick={() => saveAutoUpdate(!autoUpdateEnabled)}>
                   <span className="lang-knob">
                     <span className="lang-knob-icon lang-knob-off">
@@ -1197,7 +1180,7 @@ function PreferencesTab({
             <div className="space-y-3">
               <div className="flex items-center gap-2 p-2.5 bg-warning/10 border border-warning/20 rounded-xl">
                 <ArrowUpCircle className="w-4 h-4 text-warning shrink-0" />
-                <div><p className="text-sm font-medium text-warning">v{updateInfo.latestVersion} 可用</p><p className="text-[11px] text-warning/70">{updateInfo.releaseDate}</p></div>
+                <div><p className="text-sm font-medium text-warning">{t('settings.versionAvailable', { version: updateInfo.latestVersion })}</p><p className="text-[11px] text-warning/70">{updateInfo.releaseDate}</p></div>
               </div>
               <div className="bg-panel rounded-lg p-2.5 max-h-28 overflow-y-auto">
                 <ul className="space-y-1">{updateInfo.changelog.map((item, i) => (
@@ -1205,7 +1188,8 @@ function PreferencesTab({
                 ))}</ul>
               </div>
               <div className="flex gap-2">
-                <button className="flex-1 bg-accent hover:bg-accentDim text-white text-sm py-2 rounded-xl flex items-center justify-center gap-1.5"><Download className="w-3.5 h-3.5" />{t('settings.updateNow')}</button>
+                {/* 面板升级需重新拉取镜像，应用内无法自行替换运行中的镜像 */}
+                <a href="https://hub.docker.com/r/yinheng1989/docker-dashboard/tags" target="_blank" rel="noreferrer" className="flex-1 bg-accent hover:bg-accentDim text-white text-sm py-2 rounded-xl flex items-center justify-center gap-1.5"><Download className="w-3.5 h-3.5" />{t('settings.updateNow')}</a>
                 <button onClick={() => setUpdateState('idle')} className="px-4 py-2 text-sm text-textMuted hover:text-textPrimary bg-surface border border-border rounded-xl">{t('settings.later')}</button>
               </div>
             </div>

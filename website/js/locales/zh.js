@@ -48,7 +48,7 @@ const LOCALE_ZH = {
     "quickstart.s2_title": "按需修改配置",
     "quickstart.s2_desc": "根据你的实际环境，修改下方标注的 <code>3 个关键配置</code>",
     "quickstart.s2_item1": "将 <code>/your/projects/path</code> 替换为你存放 Compose 项目的宿主机路径",
-    "quickstart.s2_item2": "将 <code>JWT_SECRET</code> 替换为一个随机字符串（生产环境务必修改）",
+    "quickstart.s2_item2": "先执行 <code>echo \"JWT_SECRET=$(openssl rand -hex 32)\" > .env</code>，compose 中只写 <code>${JWT_SECRET}</code>（Compose 不会执行命令替换）",
     "quickstart.s2_item3": "将 <code>/your/data/path</code> 替换为面板数据存储路径",
     "quickstart.s3_title": "拉取镜像并启动",
     "quickstart.s3_desc": "拉取 Docker Hub 镜像并启动，支持 amd64 / arm64 双架构",

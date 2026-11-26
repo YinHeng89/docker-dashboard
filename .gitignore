@@ -3,4 +3,4 @@
 publish.sh
 /config
 docker.sh
-.DS_Store
+frontend/tsconfig.tsbuildinfo
