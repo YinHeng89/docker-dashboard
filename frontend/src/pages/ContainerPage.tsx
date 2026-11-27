@@ -146,12 +146,23 @@ export default function ContainerPage({
   }, [containers])
   const [updatingContainer, setUpdatingContainer] = useState<string | null>(null)
   const [showUpdateConfirm, setShowUpdateConfirm] = useState<ContainerDetailSummary | null>(null)
+  // 弹窗阶段：idle 确认 / updating 更新中 / success 成功 / error 失败
+  const [updatePhase, setUpdatePhase] = useState<'idle' | 'updating' | 'success' | 'error'>('idle')
 
   // 流式更新状态
   const [updateProgress, setUpdateProgress] = useState(0)
   const [updateLogs, setUpdateLogs] = useState<{ stream: string; message: string }[]>([])
   const [showUpdateLogs, setShowUpdateLogs] = useState(false)
   const updateLogEndRef = useRef<HTMLDivElement>(null)
+
+  // 打开更新弹窗时重置全部状态，避免上次更新的进度/日志/成功态残留
+  const openUpdateModal = (c: ContainerDetailSummary) => {
+    setUpdateProgress(0)
+    setUpdateLogs([])
+    setShowUpdateLogs(false)
+    setUpdatePhase('idle')
+    setShowUpdateConfirm(c)
+  }
   useEffect(() => {
     if (showUpdateLogs && updateLogEndRef.current) {
       updateLogEndRef.current.scrollIntoView({ behavior: 'smooth' })
@@ -163,7 +174,7 @@ export default function ContainerPage({
     if (!highlightContainerId || containers.length === 0) return
     const target = containers.find(c => c.id === highlightContainerId)
     if (target && updateResults[highlightContainerId]?.hasUpdate) {
-      setShowUpdateConfirm(target)
+      openUpdateModal(target)
       onClearHighlight?.()
     }
   }, [highlightContainerId, containers, updateResults, onClearHighlight])
@@ -323,6 +334,7 @@ export default function ContainerPage({
     const isManagedCompose = !!projectDir
 
     setUpdatingContainer(c.id)
+    setUpdatePhase('updating')
     setUpdateProgress(0)
     setUpdateLogs([])
     setShowUpdateLogs(false)
@@ -375,15 +387,29 @@ export default function ContainerPage({
               }])
             } else if (msg.type === 'all-done') {
               setUpdateProgress(100)
+              setUpdatePhase('success')
               success(msg.message || t('containers.updateSuccess'))
-              setTimeout(() => {
-                setShowUpdateConfirm(null)
-                setUpdateResults(prev => { const n = { ...prev }; delete n[c.id]; return n })
-                setUpdatingContainer(null)
-                refreshManagedProjects()
-                refresh()
-              }, 1000)
+              // 立即本地把"可更新"改为"已最新"，不等下一次检测/重新获取
+              setUpdateResults(prev => {
+                const old = prev[c.id]
+                if (!old) return prev
+                return {
+                  ...prev,
+                  [c.id]: {
+                    ...old,
+                    hasUpdate: false,
+                    status: 'up_to_date',
+                    currentDigest: old.remoteDigest || old.currentDigest,
+                    error: undefined,
+                  },
+                }
+              })
+              setUpdatingContainer(null)
+              // 刷新容器真实状态与新项目列表（不动 updateResults，否则会重新读回旧标记）
+              refreshManagedProjects()
+              refresh()
             } else if (msg.type === 'all-error') {
+              setUpdatePhase('error')
               error(msg.message || t('containers.updateFailed'))
               setUpdatingContainer(null)
             }
@@ -391,6 +417,7 @@ export default function ContainerPage({
         }
       }
     } catch (e: unknown) {
+      setUpdatePhase('error')
       error((e as Error).message || t('containers.updateFailed'))
       setUpdatingContainer(null)
     }
@@ -526,7 +553,7 @@ export default function ContainerPage({
                     {isChecking ? <Loader2 className="w-3.5 h-3.5 animate-spin" /> : <ArrowUpCircle className="w-3.5 h-3.5" />}
                   </button>
                 ) : (
-                  <button onClick={() => setShowUpdateConfirm(c)}
+                  <button onClick={() => openUpdateModal(c)}
                     title={t('containers.updateContainer')} className="p-1.5 rounded-lg bg-accent/10 text-accent hover:bg-accent/20 transition-all duration-200">
                     <ArrowUpCircle className="w-3.5 h-3.5" />
                   </button>
@@ -867,8 +894,16 @@ export default function ContainerPage({
               <div className="mb-4 space-y-2 border-t border-border pt-3">
                 <div className="space-y-1">
                   <div className="flex items-center justify-between text-xs">
-                    <span className="text-textSecondary">
-                      {updateProgress < 50 ? '正在拉取镜像...' : updateProgress < 80 ? '正在重建容器...' : updateProgress < 100 ? '正在启动...' : '更新完成'}
+                    <span className={`text-xs ${updatePhase === 'success' ? 'text-running' : updatePhase === 'error' ? 'text-error' : 'text-textSecondary'}`}>
+                      {updatePhase === 'error'
+                        ? t('update.failed', '更新失败')
+                        : updateProgress >= 100
+                          ? t('update.success', '更新完成')
+                          : updateProgress < 50
+                            ? t('containers.updatePulling', '正在拉取镜像...')
+                            : updateProgress < 80
+                              ? t('containers.updateRecreating', '正在重建容器...')
+                              : t('containers.updateStarting', '正在启动...')}
                     </span>
                     <span className="text-textMuted font-mono">{updateProgress}%</span>
                   </div>
@@ -881,19 +916,23 @@ export default function ContainerPage({
                 <button onClick={() => setShowUpdateLogs(!showUpdateLogs)}
                   className="flex items-center gap-1 text-xs text-textMuted hover:text-textPrimary transition-colors">
                   <Terminal className="w-3 h-3" />
-                  <span>日志输出</span>
+                  <span>{t('update.showLogs', '日志输出')}</span>
                   {showUpdateLogs ? <ChevronUp className="w-3 h-3" /> : <ChevronDown className="w-3 h-3" />}
                 </button>
                 {showUpdateLogs && (
                   <div className="bg-black/90 text-green-400 rounded-lg p-3 text-xs font-mono h-32 overflow-y-auto">
                     {updateLogs.length === 0 ? (
-                      <span className="text-textMuted">等待输出...</span>
+                      <span className="text-textMuted">{t('update.waitingLogs', '等待输出...')}</span>
                     ) : (
-                      updateLogs.map((log, i) => (
-                        <div key={i} className={`leading-relaxed whitespace-pre-wrap break-all ${log.stream === 'stderr' ? 'text-red-400' : 'text-green-400'}`}>
-                          {log.message}
-                        </div>
-                      ))
+                      updateLogs.map((log, i) => {
+                        // docker compose 把正常进度写到 stderr，按内容判断而非流类型，避免整片标红像报错
+                        const isErrorLine = /\b(error|failed|fatal|denied)\b|失败|错误/i.test(log.message)
+                        return (
+                          <div key={i} className={`leading-relaxed whitespace-pre-wrap break-all ${isErrorLine ? 'text-red-400' : 'text-green-400'}`}>
+                            {log.message}
+                          </div>
+                        )
+                      })
                     )}
                     <div ref={updateLogEndRef} />
                   </div>
@@ -902,19 +941,30 @@ export default function ContainerPage({
             )}
 
             <div className="flex justify-end gap-2">
-              <button onClick={() => setShowUpdateConfirm(null)}
-                className="action-btn action-btn-ghost text-xs px-3 py-1.5 rounded-lg">
-                {t('containers.cancel', '取消')}
-              </button>
-              <button onClick={() => doUpdate(showUpdateConfirm)}
-                disabled={updatingContainer === showUpdateConfirm.id}
-                className="action-btn action-btn-primary flex items-center gap-1.5 text-xs px-3 py-1.5 rounded-lg">
-                {updatingContainer === showUpdateConfirm.id ? (
-                  <><Loader2 className="w-3.5 h-3.5 animate-spin" />{t('containers.updating')}</>
-                ) : (
-                  <><ArrowUpCircle className="w-3.5 h-3.5" />{t('containers.updateContainer')}</>
-                )}
-              </button>
+              {updatePhase === 'success' ? (
+                // 成功终态：单一"完成"按钮，不再显示可再次点击的"更新容器"
+                <button onClick={() => setShowUpdateConfirm(null)}
+                  className="action-btn bg-running/10 text-running hover:bg-running/20 border border-running/20 flex items-center gap-1.5 text-xs px-4 py-1.5 rounded-lg">
+                  <CheckCircle2 className="w-3.5 h-3.5" />
+                  {t('update.done', '完成')}
+                </button>
+              ) : (
+                <>
+                  <button onClick={() => setShowUpdateConfirm(null)}
+                    className="action-btn action-btn-ghost text-xs px-3 py-1.5 rounded-lg">
+                    {updatePhase === 'updating' ? t('update.cancel', '取消更新') : t('containers.cancel', '取消')}
+                  </button>
+                  <button onClick={() => doUpdate(showUpdateConfirm)}
+                    disabled={updatePhase === 'updating'}
+                    className="action-btn action-btn-primary flex items-center gap-1.5 text-xs px-3 py-1.5 rounded-lg">
+                    {updatePhase === 'updating' ? (
+                      <><Loader2 className="w-3.5 h-3.5 animate-spin" />{t('containers.updating')}</>
+                    ) : (
+                      <><ArrowUpCircle className="w-3.5 h-3.5" />{updatePhase === 'error' ? t('update.retry', '重试更新') : t('containers.updateContainer')}</>
+                    )}
+                  </button>
+                </>
+              )}
             </div>
           </div>
         </div>, document.body

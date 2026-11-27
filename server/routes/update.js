@@ -585,7 +585,16 @@ async function updateComposeServices(containers, projectName, res) {
     for (const c of svcContainers) sendProgress(res, { type: 'step', container: c.containerId, containerName: c.containerName, step: 'recreating', message: `重建 ${svcName}...`, percent: Math.round(((done + 0.5) / serviceNames.length) * 100) });
     const uc = await runCommand('docker', [...composeBaseArgs, 'up', '-d', '--no-deps', svcName], projectDir, res, svcName);
     for (const c of svcContainers) sendProgress(res, { type: 'step', container: c.containerId, containerName: c.containerName, step: uc === 0 ? 'done' : 'error', message: uc === 0 ? `${svcName} 完成` : `${svcName} 失败`, percent: Math.round(((done + 1) / serviceNames.length) * 100) });
-    if (uc === 0) actuallyUpdated++; else failedServices.push(svcName);
+    if (uc === 0) {
+      actuallyUpdated++;
+      // 更新成功 → 回写检测表，清除"可更新"标记（否则铃铛计数不归零、刷新后复活）
+      try {
+        const { markUpdated } = require('../services/auto-update.service');
+        for (const c of svcContainers) {
+          markUpdated({ containerId: c.containerId, containerName: c.containerName });
+        }
+      } catch (e) { logError(`回写检测状态失败: ${e.message}`); }
+    } else failedServices.push(svcName);
     done++;
   }
   if (actuallyUpdated === 0) {

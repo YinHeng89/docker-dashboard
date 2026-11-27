@@ -273,6 +273,14 @@ async function handleUpdateStream(req, res) {
     send({ type: 'log', stream: 'stdout', message: '容器已启动' });
     console.log(`[UpdateStream] 更新完成`);
 
+    // 回写检测表：新容器 ID 变了，按 oldId + name 匹配旧记录，写入 newId 保持"已最新"状态
+    try {
+      const { markUpdated } = require('../services/auto-update.service');
+      markUpdated({ containerId: id, newContainerId: newId, containerName });
+    } catch (e) {
+      console.warn(`[UpdateStream] 回写检测状态失败: ${e.message}`);
+    }
+
     send({ type: 'progress', percent: 100, message: '更新完成' });
     send({ type: 'all-done', oldId: id, newId, name: containerName, image: imageName });
   } catch (e) {

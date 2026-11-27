@@ -197,8 +197,36 @@ function clearResults() {
   console.log('[AutoUpdate] 检测结果已清除');
 }
 
+// ===== 更新成功后回写检测状态（真相源）=====
+// 关键：compose 重建后容器 ID 会变但名字不变，因此按 container_id 或 container_name 双匹配。
+// 有 newContainerId 时删旧插新（保住"已最新"记录）；没有时直接删除旧记录，
+// 下次自动检测会用新 ID 重新写入，铃铛计数立即归零且刷新后不复活。
+function markUpdated({ containerId, newContainerId, containerName }) {
+  if (!containerId && !containerName) return 0;
+  const rows = queryAll('SELECT * FROM auto_update_results');
+  const matched = rows.filter(r =>
+    (containerId && r.container_id === containerId) ||
+    (containerName && r.container_name === containerName)
+  );
+  for (const r of matched) {
+    execute('DELETE FROM auto_update_results WHERE container_id = ?', [r.container_id]);
+    if (newContainerId) {
+      const digest = r.remote_digest || r.current_digest || null;
+      execute(
+        `INSERT OR REPLACE INTO auto_update_results
+         (container_id, container_name, image_name, compose_project, has_update, remote_digest, current_digest, status, error, checked_at)
+         VALUES (?, ?, ?, ?, 0, ?, ?, 'up_to_date', NULL, ?)`,
+        [newContainerId, r.container_name || containerName || '', r.image_name, r.compose_project,
+         r.remote_digest, digest, new Date().toISOString()]
+      );
+    }
+  }
+  if (matched.length) console.log(`[AutoUpdate] 更新成功，已回写 ${matched.length} 条检测记录`);
+  return matched.length;
+}
+
 function getSettings() {
   return { ...preferences };
 }
 
-module.exports = { init, updateSettings, getResults, getSettings, runCheck, clearResults };
+module.exports = { init, updateSettings, getResults, getSettings, runCheck, clearResults, markUpdated };

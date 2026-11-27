@@ -4,3 +4,5 @@ publish.sh
 /config
 docker.sh
 frontend/tsconfig.tsbuildinfo
+frontend/dist/
+frontend/node_modules/

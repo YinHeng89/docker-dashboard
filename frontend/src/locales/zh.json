@@ -221,6 +221,9 @@
     "currentDigest": "当前 Digest",
     "latestDigest": "最新 Digest",
     "updateUnchecked": "未检出/受限",
+    "updatePulling": "正在拉取镜像...",
+    "updateRecreating": "正在重建容器...",
+    "updateStarting": "正在启动...",
     "cancel": "取消",
     "composeDirectUpdate": "将使用 docker compose pull + up 更新此服务",
     "selfProtection": "禁止操作自身容器",
@@ -630,6 +633,8 @@
     "cancelled": "更新已取消",
     "failedWith": "更新失败: {{message}}",
     "success": "更新完成",
+    "done": "完成",
+    "retry": "重试更新",
     "composeOnlyHint": "仅支持 Compose 项目更新"
   },
   "terminal": {

@@ -221,6 +221,9 @@
     "currentDigest": "Current Digest",
     "latestDigest": "Latest Digest",
     "updateUnchecked": "Unchecked / Restricted",
+    "updatePulling": "Pulling image...",
+    "updateRecreating": "Recreating container...",
+    "updateStarting": "Starting...",
     "cancel": "Cancel",
     "composeDirectUpdate": "Will use docker compose pull + up to update this service",
     "selfProtection": "Cannot operate self container",
@@ -630,6 +633,8 @@
     "cancelled": "Update cancelled",
     "failedWith": "Update failed: {{message}}",
     "success": "Update complete",
+    "done": "Done",
+    "retry": "Retry update",
     "composeOnlyHint": "Only Compose projects can be updated"
   },
   "terminal": {
